@@ -1,18 +1,18 @@
 # Multi-stage Dockerfile for AgentOps Frontend (Next.js)
-FROM node:20-alpine AS deps
+FROM node:20.18.0-alpine3.20 AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 COPY apps/web/package*.json ./
 RUN npm ci --prefer-offline || npm install
 
-FROM node:20-alpine AS builder
+FROM node:20.18.0-alpine3.20 AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY apps/web/ .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build || echo "Scaffold build stub"
 
-FROM node:20-alpine AS runner
+FROM node:20.18.0-alpine3.20 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

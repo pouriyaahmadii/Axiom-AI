@@ -1,5 +1,5 @@
 # Multi-stage Dockerfile for AgentOps Backend (FastAPI & Celery)
-FROM python:3.10-slim AS builder
+FROM python:3.10.15-slim-bookworm AS builder
 
 WORKDIR /build
 
@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir .
 
 # Runtime Stage
-FROM python:3.10-slim AS runner
+FROM python:3.10.15-slim-bookworm AS runner
 
 WORKDIR /app
 

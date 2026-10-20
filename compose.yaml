@@ -2,7 +2,7 @@ name: agentops
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.4-alpine
     container_name: agentops_postgres
     restart: unless-stopped
     environment:
@@ -22,7 +22,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7.2-alpine
+    image: redis:7.2.6-alpine
     container_name: agentops_redis
     restart: unless-stopped
     volumes:
@@ -83,7 +83,7 @@ services:
         condition: service_healthy
 
   n8n:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.70.0
     container_name: agentops_n8n
     restart: unless-stopped
     ports:
