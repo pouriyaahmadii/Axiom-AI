@@ -73,6 +73,18 @@ Detailed system documentation is located in the [`docs/`](file:///Users/macbook/
 - [08-use-cases.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/08-use-cases.md): Primary competitor intelligence workflow, edge cases, and failure recovery.
 - [09-acceptance-criteria.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/09-acceptance-criteria.md): Verification matrix and explicit MVP release gates.
 - [10-mvp-backlog.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/10-mvp-backlog.md): MoSCoW-prioritized engineering backlog and deliberately deferred features.
+- [11-system-architecture.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/11-system-architecture.md): Service architecture, container topology, state ownership, and failure recovery.
+- [12-data-model.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/12-data-model.md): PostgreSQL relational schemas, ER diagram, Alembic migration strategy, and connection pools.
+- [13-api-design.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/13-api-design.md): REST API v1 specification, request/response models, and webhook signatures.
+- [14-security-threat-model.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/14-security-threat-model.md): Trust boundaries, STRIDE/OWASP threat mitigations, and SSRF defenses.
+- [15-observability-design.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/15-observability-design.md): Structured JSON logging, OpenTelemetry distributed tracing, and audit events.
+- [16-deployment-model.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/16-deployment-model.md): Docker Compose specification, container hardening, and GitHub Actions CI.
+- **Architecture Decision Records (ADRs)**:
+  - [ADR-001: Core Technology Stack Selection](file:///Users/macbook/Downloads/Github_repo/agentops/docs/adr/ADR-001-technology-stack.md)
+  - [ADR-002: Agent Orchestration Engine Selection (LangGraph)](file:///Users/macbook/Downloads/Github_repo/agentops/docs/adr/ADR-002-agent-orchestration.md)
+  - [ADR-003: Asynchronous Background Execution (Celery + Redis)](file:///Users/macbook/Downloads/Github_repo/agentops/docs/adr/ADR-003-background-execution.md)
+  - [ADR-004: Model & Provider Abstraction with Deterministic Mock Mode](file:///Users/macbook/Downloads/Github_repo/agentops/docs/adr/ADR-004-provider-abstraction.md)
+  - [ADR-005: Local-First Deployment Strategy via Docker Compose](file:///Users/macbook/Downloads/Github_repo/agentops/docs/adr/ADR-005-local-first-deployment.md)
 - [architecture.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/architecture.md): Technical topology and system design.
 - [security.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/security.md): Security model, trust boundaries, and threat mitigation.
 - [spec.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/spec.md): System functional specifications and interfaces.
