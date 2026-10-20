@@ -1,16 +1,24 @@
-"""API v1 master router and core health routes."""
+"""API v1 master router assembling runs, approvals, and health routes."""
 
 from typing import Any
 
 from fastapi import APIRouter
 
+from app.api.v1.routes.approvals import router as approvals_router
+from app.api.v1.routes.health import router as health_router
+from app.api.v1.routes.runs import router as runs_router
 from app.core.config import get_settings
 
 router = APIRouter()
 settings = get_settings()
 
+# Mount child routers
+router.include_router(runs_router)
+router.include_router(approvals_router)
+router.include_router(health_router)
 
-@router.get("/health", tags=["System"])
+
+@router.get("/health", tags=["System"], summary="System operational status")
 async def health_check() -> dict[str, str]:
     """Health check endpoint to verify service operational status."""
     return {
@@ -22,7 +30,7 @@ async def health_check() -> dict[str, str]:
     }
 
 
-@router.get("/info", tags=["System"])
+@router.get("/info", tags=["System"], summary="Runtime limits and providers")
 async def system_info() -> dict[str, Any]:
     """Return runtime constraints and provider configurations."""
     return {

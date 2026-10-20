@@ -2,19 +2,19 @@
 
 > Self-hosted AI Agent Operations Platform for verifiable, observable, and bounded research execution.
 
-[![Status](https://img.shields.io/badge/Status-In%20Development%20(Phase%208)-orange)](#project-status)
+[![Status](https://img.shields.io/badge/Status-In%20Development%20(Phase%209)-orange)](#project-status)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ---
 
 ## Project Status
 
-**Current Phase**: **Phase 8: Database Domain Model & Migrations** (In Development)
+**Current Phase**: **Phase 9: Backend API Foundation** (In Development)
 
 AgentOps is an engineering portfolio project under active development. It demonstrates production-grade AI systems engineering, deterministic orchestration, security boundaries, and observable operations.
 
-- **Current Implementation State**: Baseline architecture, security primitives, repository scaffold, dependency & runtime compatibility matrices, strict code quality conventions (Ruff, Mypy strict, Pytest), multi-database PostgreSQL initialization, Redis, n8n Community, Docker Compose topology, 10 core SQLAlchemy 2.0 domain models (`Run`, `RunStep`, `ToolInvocation`, `Source`, `EvidenceItem`, `Approval`, `Report`, `LLMCall`, `AuditEvent`, `OutboxEvent`), initial Alembic versioned migration, and migration runbooks are established.
-- **Application Business Logic**: Planned for subsequent phases (Phase 9+). Infrastructure and persistence layers are fully established and verified through integration and unit test suites.
+- **Current Implementation State**: Baseline architecture, security primitives, repository scaffold, dependency & runtime compatibility matrices, strict code quality conventions (Ruff, Mypy strict, Pytest), multi-database PostgreSQL initialization, Redis, n8n Community, Docker Compose topology, 10 core SQLAlchemy 2.0 domain models, initial Alembic versioned migration, versioned REST API (`/api/v1/runs`, `/api/v1/approvals`), health probes (`/health/live`, `/health/ready`), correlation ID middleware, strict Pydantic v2 schemas, unified error envelope, and comprehensive integration tests are established.
+- **Application Business Logic**: Planned for subsequent phases (Phase 10+). Agent orchestration runtime, guarded tool sandbox, and provider integrations follow.
 
 ---
 

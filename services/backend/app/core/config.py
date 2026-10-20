@@ -31,6 +31,10 @@ class Settings(BaseSettings):
         default="change-me-in-production-use-a-strong-secret-key-at-least-32-chars",
         description="Application secret key",
     )
+    API_KEY: str = Field(
+        default="agentops-dev-internal-key",
+        description="Internal service API key for API clients and n8n",
+    )
 
     # Database Configuration
     DATABASE_URL: str = Field(
