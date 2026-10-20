@@ -12,7 +12,7 @@ def setup_logging(level: str = "INFO", log_format: str = "json") -> None:
     try:
         import structlog
 
-        shared_processors = [
+        shared_processors: list[Any] = [
             structlog.contextvars.merge_contextvars,
             structlog.stdlib.add_logger_name,
             structlog.stdlib.add_log_level,
@@ -22,6 +22,7 @@ def setup_logging(level: str = "INFO", log_format: str = "json") -> None:
             structlog.processors.format_exc_info,
         ]
 
+        renderer: Any
         if log_format.lower() == "json":
             renderer = structlog.processors.JSONRenderer()
         else:

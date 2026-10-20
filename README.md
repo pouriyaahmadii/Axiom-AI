@@ -81,6 +81,7 @@ Detailed system documentation is located in the [`docs/`](file:///Users/macbook/
 - [16-deployment-model.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/16-deployment-model.md): Docker Compose specification, container hardening, and GitHub Actions CI.
 - [17-dependency-policy.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/17-dependency-policy.md): Dependency management policy, pinning rules, lockfiles, and license compliance.
 - [18-runtime-compatibility.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/18-runtime-compatibility.md): Runtime compatibility matrix, Apple Silicon nuances, and execution topology.
+- [19-development-workflow.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/19-development-workflow.md): Development workflow guide, code-quality standards, and troubleshooting.
 - [repository-scaffold.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/audits/repository-scaffold.md): Repository structure audit and conformance matrix.
 - **Architecture Decision Records (ADRs)**:
   - [ADR-001: Core Technology Stack Selection](file:///Users/macbook/Downloads/Github_repo/agentops/docs/adr/ADR-001-technology-stack.md)

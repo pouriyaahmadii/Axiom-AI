@@ -10,6 +10,16 @@ insert_final_newline = true
 
 [*.py]
 indent_size = 4
+max_line_length = 100
+
+[*.{ts,tsx,js,jsx}]
+indent_size = 2
+
+[*.{json,yaml,yml}]
+indent_size = 2
 
 [*.md]
 trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

@@ -1,5 +1,7 @@
 """API v1 master router and core health routes."""
 
+from typing import Any
+
 from fastapi import APIRouter
 
 from app.core.config import get_settings
@@ -9,7 +11,7 @@ settings = get_settings()
 
 
 @router.get("/health", tags=["System"])
-async def health_check():
+async def health_check() -> dict[str, str]:
     """Health check endpoint to verify service operational status."""
     return {
         "status": "ok",
@@ -21,7 +23,7 @@ async def health_check():
 
 
 @router.get("/info", tags=["System"])
-async def system_info():
+async def system_info() -> dict[str, Any]:
     """Return runtime constraints and provider configurations."""
     return {
         "app_name": settings.APP_NAME,

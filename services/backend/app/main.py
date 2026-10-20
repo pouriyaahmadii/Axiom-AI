@@ -1,5 +1,6 @@
 """Main FastAPI application factory and entrypoint."""
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
@@ -16,7 +17,7 @@ logger = get_logger("agentops.main")
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan context manager for startup and shutdown routines."""
     setup_logging(level=settings.LOG_LEVEL, log_format=settings.LOG_FORMAT)
     logger.info(
@@ -52,7 +53,9 @@ def create_app() -> FastAPI:
 
     # Security exception handler
     @app.exception_handler(SecurityValidationError)
-    async def security_exception_handler(request: Request, exc: SecurityValidationError):
+    async def security_exception_handler(
+        request: Request, exc: SecurityValidationError
+    ) -> JSONResponse:
         logger.warning(
             "Security policy violation intercepted", path=request.url.path, error=str(exc)
         )
@@ -66,7 +69,7 @@ def create_app() -> FastAPI:
 
     # Root endpoint
     @app.get("/", tags=["System"])
-    async def root():
+    async def root() -> dict[str, str]:
         return {
             "name": settings.APP_NAME,
             "version": "0.1.0",
