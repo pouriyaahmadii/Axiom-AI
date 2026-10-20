@@ -1,38 +1,84 @@
 # AgentOps
 
-> Maintainable, secure-by-default, observable, self-hostable AI Agent Operations Platform.
+> Self-hosted AI Agent Operations Platform for verifiable, observable, and bounded research execution.
 
-AgentOps accepts research and analysis requests, constructs validated execution plans, executes allowlisted tools, preserves durable state, records evidence and events, enforces human-in-the-loop (HITL) approvals, and produces traceable final reports.
-
----
-
-## Key Features
-
-- **LangGraph Single-Coordinator Orchestration**: Deterministic workflow state machine with explicit transitions and interrupts.
-- **Deterministic Mock Mode**: 100% offline-verifiable operation without paid API keys.
-- **Security-First Architecture**:
-  - SSRF protection against private IP spaces, cloud metadata (169.254.169.254), and loopback.
-  - Strict Pydantic v2 schemas around every model and tool boundary.
-  - No arbitrary shell, SQL, or code execution.
-- **Durable Run State**: Persistent checkpoints, event log, and evidence records stored in PostgreSQL.
-- **Human-in-the-Loop (HITL)**: Consequential operations pause until explicitly reviewed and approved.
-- **Traceable Reports**: Final markdown output with grounded citation evidence and execution audit trails.
-- **Open Observability**: Structured JSON logging and OpenTelemetry tracing support.
+[![Status](https://img.shields.io/badge/Status-In%20Development%20(Phase%201)-orange)](#project-status)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ---
 
-## Quickstart (Local Development)
+## Project Status
 
-### 1. Prerequisites
-- Python 3.10+
-- Node.js 18+ (for frontend)
-- Docker & Docker Compose (optional for full containerized stack)
+**Current Phase**: **Phase 1: Project Definition and Workspace Audit** (In Development)
 
-### 2. Environment Setup
+AgentOps is an engineering portfolio project under active development. It demonstrates production-grade AI systems engineering, deterministic orchestration, security boundaries, and observable operations.
 
-Clone the repository and prepare your virtual environment:
+- **Current Implementation State**: Baseline architecture, security primitives (SSRF defense, HMAC verification), project configuration, and core project specifications are established.
+- **Application Business Logic**: Planned for subsequent phases. No claims of production readiness or completed business workflows are made at this stage.
+
+---
+
+## Project Mission
+
+AgentOps accepts a research or analysis request, validates the request against strict bounds, generates a validated execution plan, invokes approved tools, collects durable evidence, manages failures with bounded retries, requests human approval when necessary, and produces a traceable final report.
+
+### Primary Demonstration: Industry Competitor Analysis
+The flagship demonstration workflow analyzes competitors in a designated industry and geography using public, permitted sources. It compares products, market positioning, published pricing models, target customer segments, and recent public announcements, citing material factual claims and clearly distinguishing evidence from inference.
+
+---
+
+## Planned Architecture & Tech Stack
+
+- **Backend API**: Python 3.10+, FastAPI (Pydantic v2 schemas, OpenAPI specs)
+- **Agent Orchestrator**: LangGraph (deterministic state machine, state checkpointing)
+- **Task Queue & Broker**: Celery + Redis (asynchronous execution, bounded timeouts)
+- **Primary Database**: PostgreSQL (durable runs, event log, immutable evidence records)
+- **Tool Sandbox**: Strict allowlisting with SSRF defense (no arbitrary shell or SQL)
+- **Provider Adapters**: Pluggable architecture featuring a **Deterministic Mock Mode** (100% offline, zero paid API keys required), with optional adapters for OpenAI, Ollama, and Tavily.
+- **Automation Integration**: Self-hosted n8n Community Edition for webhooks, triggers, and external notifications (core application rules remain in Python).
+- **Frontend**: Next.js, React, TypeScript, Tailwind CSS (run inspector, evidence drawer, HITL approval interface)
+- **Containers**: Docker Compose (local-first, loopback-restricted dev ports)
+- **Observability**: Structured JSON logging and OpenTelemetry tracing
+
+---
+
+## Product Constraints & Non-Goals
+
+### Constraints
+- **Local-first and Docker-based**: Operates reliably on a single workstation or development server.
+- **Deterministic Mock Mode**: Can be fully evaluated, tested, and demonstrated without paid API keys.
+- **Python-Owned Logic**: Core orchestration, validation, and business rules remain strictly in Python.
+- **Zero Trust Boundaries**: Web pages, external API payloads, and LLM completions are treated as untrusted input.
+
+### Explicit Non-Goals
+- **No Multi-Tenant SaaS**: Does not include tenant isolation, Stripe billing, or SaaS user management.
+- **No Unrestricted Swarms**: Does not implement dynamic, unconstrained multi-agent swarms.
+- **No Arbitrary Code Execution**: The LLM is never permitted to execute arbitrary shell, SQL, or Python code.
+- **No Uncontrolled Scraping**: Does not bypass CAPTCHAs, ignore robots.txt, or run aggressive crawler clusters.
+
+---
+
+## Project Documentation
+
+Detailed system documentation is located in the [`docs/`](file:///Users/macbook/Downloads/Github_repo/agentops/docs/) directory:
+
+- [00-product-vision.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/00-product-vision.md): Problem statement, mission, and demonstration scope.
+- [01-scope-and-mvp.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/01-scope-and-mvp.md): In-scope MVP features, operating constraints, and explicit non-goals.
+- [02-personas-and-user-stories.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/02-personas-and-user-stories.md): Detailed user personas and epic user stories with acceptance criteria.
+- [03-success-metrics.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/03-success-metrics.md): Target metric categories and evaluation framework (distinguishing targets from measured results).
+- [04-glossary.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/04-glossary.md): Terminology and architectural definitions.
+- [architecture.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/architecture.md): Technical topology and system design.
+- [security.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/security.md): Security model, trust boundaries, and threat mitigation.
+- [spec.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/spec.md): System functional specifications and interfaces.
+
+---
+
+## Baseline Verification (Local Setup)
+
+### 1. Environment Setup
 
 ```bash
+# Clone the repository
 git clone https://github.com/your-username/agentops.git
 cd agentops
 
@@ -40,56 +86,21 @@ cd agentops
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies
+# Install baseline dependencies
 pip install -e ".[dev]"
 
 # Copy environment template
 cp .env.example .env
 ```
 
-### 3. Run Verification Tests & Linter
+### 2. Run Verification Checks
 
 ```bash
-# Run test suite
+# Verify baseline unit and security tests
 pytest backend/tests
 
-# Run ruff linter
+# Verify formatting and linting
 ruff check .
-```
-
-### 4. Run Development API Server
-
-```bash
-uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload
-```
-
-Visit the interactive OpenAPI documentation at:
-- `http://127.0.0.1:8000/docs`
-- Health check: `http://127.0.0.1:8000/api/v1/health`
-
----
-
-## Repository Structure
-
-```
-agentops/
-├── backend/
-│   ├── app/
-│   │   ├── api/             # FastAPI routes & v1 router
-│   │   ├── core/            # Configuration, logging, SSRF security
-│   │   ├── domain/          # Pydantic schemas & data models
-│   │   ├── orchestration/   # LangGraph coordinators & tools
-│   │   ├── adapters/        # LLM & Search provider adapters (Mock/Live)
-│   │   ├── db/              # Database models, sessions & migrations
-│   │   ├── tasks/           # Celery background workers
-│   │   └── main.py          # FastAPI application factory
-│   └── tests/               # Unit and integration test suites
-├── docs/                    # Architecture, security & specifications
-├── frontend/                # Next.js web application (React, TypeScript)
-├── docker/                  # Dockerfiles & container compose configs
-├── .env.example             # Safe loopback configuration template
-├── pyproject.toml           # Python package specifications & tool configs
-└── README.md
 ```
 
 ---
