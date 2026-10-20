@@ -2,19 +2,19 @@
 
 > Self-hosted AI Agent Operations Platform for verifiable, observable, and bounded research execution.
 
-[![Status](https://img.shields.io/badge/Status-In%20Development%20(Phase%207)-orange)](#project-status)
+[![Status](https://img.shields.io/badge/Status-In%20Development%20(Phase%208)-orange)](#project-status)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ---
 
 ## Project Status
 
-**Current Phase**: **Phase 7: The Initial Local Infrastructure** (In Development)
+**Current Phase**: **Phase 8: Database Domain Model & Migrations** (In Development)
 
 AgentOps is an engineering portfolio project under active development. It demonstrates production-grade AI systems engineering, deterministic orchestration, security boundaries, and observable operations.
 
-- **Current Implementation State**: Baseline architecture, security primitives, repository scaffold, dependency & runtime compatibility matrices, strict code quality conventions (Ruff, Mypy strict, Pytest), multi-database PostgreSQL initialization, Redis, n8n Community, Docker Compose topology, and operational runbooks are established.
-- **Application Business Logic**: Planned for subsequent phases (Phase 8+). Infrastructure is ready with dormant `app` profiles to avoid unbuilt container failures.
+- **Current Implementation State**: Baseline architecture, security primitives, repository scaffold, dependency & runtime compatibility matrices, strict code quality conventions (Ruff, Mypy strict, Pytest), multi-database PostgreSQL initialization, Redis, n8n Community, Docker Compose topology, 10 core SQLAlchemy 2.0 domain models (`Run`, `RunStep`, `ToolInvocation`, `Source`, `EvidenceItem`, `Approval`, `Report`, `LLMCall`, `AuditEvent`, `OutboxEvent`), initial Alembic versioned migration, and migration runbooks are established.
+- **Application Business Logic**: Planned for subsequent phases (Phase 9+). Infrastructure and persistence layers are fully established and verified through integration and unit test suites.
 
 ---
 
@@ -84,6 +84,7 @@ Detailed system documentation is located in the [`docs/`](file:///Users/macbook/
 - [19-development-workflow.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/19-development-workflow.md): Development workflow guide, code-quality standards, and troubleshooting.
 - [local-infrastructure.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/runbooks/local-infrastructure.md): Operational guide for Docker Compose services, healthchecks, loopback security, and multi-database PostgreSQL.
 - [backup-and-restore.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/runbooks/backup-and-restore.md): Procedures for database dumps, Redis persistence, volume backups, and safe non-destructive resets.
+- [database-migrations.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/runbooks/database-migrations.md): Schema management guide, Alembic versioning, offline SQL generation, and rollback playbooks.
 - [repository-scaffold.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/audits/repository-scaffold.md): Repository structure audit and conformance matrix.
 - **Architecture Decision Records (ADRs)**:
   - [ADR-001: Core Technology Stack Selection](file:///Users/macbook/Downloads/Github_repo/agentops/docs/adr/ADR-001-technology-stack.md)
