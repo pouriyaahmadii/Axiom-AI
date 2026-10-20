@@ -67,6 +67,12 @@ Detailed system documentation is located in the [`docs/`](file:///Users/macbook/
 - [02-personas-and-user-stories.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/02-personas-and-user-stories.md): Detailed user personas and epic user stories with acceptance criteria.
 - [03-success-metrics.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/03-success-metrics.md): Target metric categories and evaluation framework (distinguishing targets from measured results).
 - [04-glossary.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/04-glossary.md): Terminology and architectural definitions.
+- [05-product-requirements.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/05-product-requirements.md): Master PRD connecting vision, capabilities, and release phasing.
+- [06-functional-requirements.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/06-functional-requirements.md): Testable functional requirements catalog (FR-01 to FR-14).
+- [07-non-functional-requirements.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/07-non-functional-requirements.md): Verifiable quality attributes, latency budgets, and security bounds.
+- [08-use-cases.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/08-use-cases.md): Primary competitor intelligence workflow, edge cases, and failure recovery.
+- [09-acceptance-criteria.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/09-acceptance-criteria.md): Verification matrix and explicit MVP release gates.
+- [10-mvp-backlog.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/10-mvp-backlog.md): MoSCoW-prioritized engineering backlog and deliberately deferred features.
 - [architecture.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/architecture.md): Technical topology and system design.
 - [security.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/security.md): Security model, trust boundaries, and threat mitigation.
 - [spec.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/spec.md): System functional specifications and interfaces.
