@@ -79,6 +79,7 @@ Detailed system documentation is located in the [`docs/`](file:///Users/macbook/
 - [14-security-threat-model.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/14-security-threat-model.md): Trust boundaries, STRIDE/OWASP threat mitigations, and SSRF defenses.
 - [15-observability-design.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/15-observability-design.md): Structured JSON logging, OpenTelemetry distributed tracing, and audit events.
 - [16-deployment-model.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/16-deployment-model.md): Docker Compose specification, container hardening, and GitHub Actions CI.
+- [repository-scaffold.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/audits/repository-scaffold.md): Repository structure audit and conformance matrix.
 - **Architecture Decision Records (ADRs)**:
   - [ADR-001: Core Technology Stack Selection](file:///Users/macbook/Downloads/Github_repo/agentops/docs/adr/ADR-001-technology-stack.md)
   - [ADR-002: Agent Orchestration Engine Selection (LangGraph)](file:///Users/macbook/Downloads/Github_repo/agentops/docs/adr/ADR-002-agent-orchestration.md)
@@ -115,10 +116,52 @@ cp .env.example .env
 
 ```bash
 # Verify baseline unit and security tests
-pytest backend/tests
+pytest services/backend/tests
+# Or use the Makefile
+make test
 
 # Verify formatting and linting
 ruff check .
+ruff format --check .
+```
+
+---
+
+## Repository Structure
+
+```
+agentops/
+├── apps/
+│   └── web/                 # Next.js frontend application (App Router, UI, hooks)
+├── services/
+│   └── backend/             # FastAPI API gateway, Celery workers & LangGraph
+│       ├── app/
+│       │   ├── api/v1/      # REST API route handlers
+│       │   ├── core/        # Config, logging, SSRF security
+│       │   ├── models/      # SQLAlchemy ORM models
+│       │   ├── schemas/     # Pydantic v2 domain schemas
+│       │   ├── repositories/# Data access layers
+│       │   ├── services/    # Business domain services
+│       │   ├── agents/      # LangGraph state machine & nodes
+│       │   ├── tools/       # Guarded tool sandbox (web_search, fetch_document)
+│       │   ├── providers/   # Provider adapters (Mock, OpenAI, Ollama, Tavily)
+│       │   ├── workers/     # Celery tasks & queues
+│       │   └── observability/# OpenTelemetry tracing & audit logs
+│       ├── migrations/      # Alembic migration scripts
+│       └── tests/           # Unit, integration, and contract tests
+├── workflows/
+│   └── n8n/                 # Self-hosted n8n templates (triggers, notifications)
+├── evals/                   # Evaluation datasets, test cases, and baselines
+├── infra/
+│   ├── docker/              # Multi-stage Dockerfiles
+│   ├── postgres/            # Database init & extensions
+│   └── monitoring/          # OTel & Prometheus configs
+├── scripts/                 # Development and operational utilities
+├── docs/                    # Architecture, specifications, ADRs, and audits
+├── compose.yaml             # Docker Compose deployment manifest
+├── Makefile                 # Developer task runner
+├── pyproject.toml           # Python package specifications & tool configs
+└── README.md
 ```
 
 ---

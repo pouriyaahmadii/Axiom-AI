@@ -41,6 +41,7 @@ yarn-error.log*
 docker/data/
 postgres_data/
 redis_data/
+n8n_data/
 
 # OS artifacts
 .DS_Store
@@ -51,3 +52,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Evaluation and run artifacts (keep baselines and fixtures, ignore generated run outputs)
+evals/reports/generated/

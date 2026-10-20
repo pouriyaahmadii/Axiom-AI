@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Virtual environments & dependencies
+.venv
+venv
+node_modules
+
+# Python caches & build artifacts
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# Node & Next.js build artifacts
+.next
+out
+build
+dist
+*.log
+
+# Local secrets & environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Local volume & database files
+*.sqlite3
+*.db
+postgres_data
+redis_data
+n8n_data
+
+# OS and Editor artifacts
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+
+# Documentation and evaluation reports (not needed in runtime container)
+docs
+evals/reports

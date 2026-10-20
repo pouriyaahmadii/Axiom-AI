@@ -1,0 +1,120 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentops-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agentops_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentops_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-agentops_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - agentops-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentops_user -d agentops_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: agentops-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    networks:
+      - agentops-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend-api:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.Dockerfile
+    container_name: agentops-api
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-agentops_user}:${POSTGRES_PASSWORD:-agentops_pass}@postgres:5432/${POSTGRES_DB:-agentops_db}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - agentops-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  backend-worker:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.Dockerfile
+    container_name: agentops-worker
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-agentops_user}:${POSTGRES_PASSWORD:-agentops_pass}@postgres:5432/${POSTGRES_DB:-agentops_db}
+      - SYNC_DATABASE_URL=postgresql://${POSTGRES_USER:-agentops_user}:${POSTGRES_PASSWORD:-agentops_pass}@postgres:5432/${POSTGRES_DB:-agentops_db}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    networks:
+      - agentops-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: agentops-n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-agentops_admin_pass}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - agentops-net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: infra/docker/frontend.Dockerfile
+    container_name: agentops-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://127.0.0.1:8000/api/v1
+    networks:
+      - agentops-net
+    depends_on:
+      - backend-api
+
+networks:
+  agentops-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  n8n_data:
