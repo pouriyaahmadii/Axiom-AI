@@ -2,12 +2,14 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import verify_api_key
-from app.db.session import get_async_session
-from app.models.enums import ApprovalStatus, RunStatus
+from app.db.session import async_session_scope, get_async_session
+from app.models.enums import ApprovalStatus, OutboxStatus, RunStatus
+from app.models.outbox import OutboxEvent
 from app.schemas.events import AuditEventListResponse, AuditEventResponse
 from app.schemas.reports import ReportResponse
 from app.schemas.runs import (
@@ -22,9 +24,26 @@ from app.schemas.runs import (
     StepCompactResponse,
 )
 from app.schemas.steps import RunStepListResponse, RunStepResponse
-from app.services import run_service
+from app.services import outbox_service, run_service
 
 router = APIRouter(prefix="/runs", tags=["Runs"])
+
+
+async def _dispatch_outbox_for_run(run_id: uuid.UUID) -> None:
+    """Background task to immediately dispatch committed outbox event to broker."""
+    try:
+        async with async_session_scope() as session:
+            stmt = select(OutboxEvent).where(
+                OutboxEvent.aggregate_id == str(run_id),
+                OutboxEvent.status == OutboxStatus.PENDING,
+            )
+            result = await session.execute(stmt)
+            event = result.scalar_one_or_none()
+            if event:
+                await outbox_service.dispatch_outbox_event_async(session, event)
+    except Exception:
+        # Broker errors during background dispatch are recorded in outbox_events; do not raise.
+        pass
 
 
 @router.post(
@@ -38,11 +57,16 @@ router = APIRouter(prefix="/runs", tags=["Runs"])
 async def create_run(
     request_data: RunCreateRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_async_session),
 ) -> RunCreateResponse:
     """Submit a research run for background execution."""
     correlation_id = getattr(request.state, "correlation_id", None)
-    run, _ = await run_service.create_run(session, request_data, correlation_id)
+    run, is_new = await run_service.create_run(session, request_data, correlation_id)
+
+    if is_new:
+        background_tasks.add_task(_dispatch_outbox_for_run, run.id)
+
     return RunCreateResponse(
         run_id=run.id,
         status=run.status,

@@ -57,3 +57,25 @@ class ServiceUnavailableError(AgentOpsError):
         self, message: str = "Service unavailable.", details: list[dict[str, Any]] | None = None
     ) -> None:
         super().__init__(message, code="SERVICE_UNAVAILABLE", details=details)
+
+
+class TransientWorkerError(AgentOpsError):
+    """Raised for transient worker or external network errors that should be retried with backoff."""
+
+    def __init__(
+        self,
+        message: str = "Transient failure encountered.",
+        details: list[dict[str, Any]] | None = None,
+    ) -> None:
+        super().__init__(message, code="TRANSIENT_WORKER_ERROR", details=details)
+
+
+class DeterministicValidationError(AgentOpsError):
+    """Raised when validation, security policy, or domain constraints are deterministically violated."""
+
+    def __init__(
+        self,
+        message: str = "Deterministic validation failed.",
+        details: list[dict[str, Any]] | None = None,
+    ) -> None:
+        super().__init__(message, code="DETERMINISTIC_VALIDATION_ERROR", details=details)

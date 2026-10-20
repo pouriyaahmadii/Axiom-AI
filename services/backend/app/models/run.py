@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Enum, Index, Numeric, String, Text, Uuid
+from sqlalchemy import DateTime, Enum, Index, Integer, Numeric, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, JSONBType, TimestampMixin, generate_uuid
@@ -71,6 +71,11 @@ class Run(Base, TimestampMixin):
     estimated_cost_usd: Mapped[Decimal] = mapped_column(
         Numeric(6, 4),
         default=Decimal("0.0000"),
+        nullable=False,
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
         nullable=False,
     )
     raw_plan: Mapped[dict[str, Any] | None] = mapped_column(

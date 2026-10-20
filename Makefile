@@ -1,4 +1,4 @@
-.PHONY: help install install-web lint lint-fix format format-check type-check test test-unit test-integration validate up down clean
+.PHONY: help install install-web lint lint-fix format format-check type-check test test-unit test-integration validate worker up down clean
 
 PYTHON := .venv/bin/python
 PYTEST := .venv/bin/pytest
@@ -56,6 +56,10 @@ test-integration:
 
 validate: lint format-check type-check test
 	@echo "==> All quality gate checks PASSED cleanly."
+
+worker:
+	PYTHONPATH=services/backend $(PYTHON) -m celery -A app.workers.celery_app worker --loglevel=info --pool=threads --concurrency=4 -Q agentops.runs
+
 
 up:
 	docker compose -p agentops up -d
