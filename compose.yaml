@@ -6,29 +6,38 @@ services:
     container_name: agentops_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-agentops_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentops_pass}
-      POSTGRES_DB: ${POSTGRES_DB:-agentops_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_dev_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      AGENTOPS_DB_USER: ${AGENTOPS_DB_USER:-agentops_user}
+      AGENTOPS_DB_PASSWORD: ${AGENTOPS_DB_PASSWORD:-agentops_pass}
+      AGENTOPS_DB_NAME: ${AGENTOPS_DB_NAME:-agentops_db}
+      N8N_DB_USER: ${N8N_DB_USER:-n8n_user}
+      N8N_DB_PASSWORD: ${N8N_DB_PASSWORD:-n8n_pass}
+      N8N_DB_NAME: ${N8N_DB_NAME:-n8n_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5432:5432"
+      - ./infra/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    expose:
+      - "5432"
     networks:
       - agentops-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agentops_user -d agentops_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres_admin} -d $${POSTGRES_DB:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   redis:
     image: redis:7.2.6-alpine
     container_name: agentops_redis
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
-    ports:
-      - "127.0.0.1:6379:6379"
+    expose:
+      - "6379"
     networks:
       - agentops-net
     healthcheck:
@@ -37,7 +46,47 @@ services:
       timeout: 3s
       retries: 5
 
+  n8n:
+    image: n8nio/n8n:1.70.0
+    container_name: agentops_n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${N8N_DB_NAME:-n8n_db}
+      - DB_POSTGRESDB_USER=${N8N_DB_USER:-n8n_user}
+      - DB_POSTGRESDB_PASSWORD=${N8N_DB_PASSWORD:-n8n_pass}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      - N8N_HOST=127.0.0.1
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://127.0.0.1:5678/
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+      - N8N_HIRING_BANNER_ENABLED=false
+      - N8N_LOG_LEVEL=info
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - agentops-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Application services (Profile 'app'):
+  # Kept dormant during infrastructure provisioning to prevent unbuilt container failures.
+  # Boot with: docker compose --profile app up -d
   backend-api:
+    profiles: ["app"]
     build:
       context: .
       dockerfile: infra/docker/backend.Dockerfile
@@ -46,7 +95,8 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     environment:
       - ENVIRONMENT=development
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-agentops_user}:${POSTGRES_PASSWORD:-agentops_pass}@postgres:5432/${POSTGRES_DB:-agentops_db}
+      - DATABASE_URL=postgresql+asyncpg://${AGENTOPS_DB_USER:-agentops_user}:${AGENTOPS_DB_PASSWORD:-agentops_pass}@postgres:5432/${AGENTOPS_DB_NAME:-agentops_db}
+      - SYNC_DATABASE_URL=postgresql://${AGENTOPS_DB_USER:-agentops_user}:${AGENTOPS_DB_PASSWORD:-agentops_pass}@postgres:5432/${AGENTOPS_DB_NAME:-agentops_db}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
@@ -61,6 +111,7 @@ services:
         condition: service_healthy
 
   backend-worker:
+    profiles: ["app"]
     build:
       context: .
       dockerfile: infra/docker/backend.Dockerfile
@@ -69,8 +120,8 @@ services:
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
     environment:
       - ENVIRONMENT=development
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-agentops_user}:${POSTGRES_PASSWORD:-agentops_pass}@postgres:5432/${POSTGRES_DB:-agentops_db}
-      - SYNC_DATABASE_URL=postgresql://${POSTGRES_USER:-agentops_user}:${POSTGRES_PASSWORD:-agentops_pass}@postgres:5432/${POSTGRES_DB:-agentops_db}
+      - DATABASE_URL=postgresql+asyncpg://${AGENTOPS_DB_USER:-agentops_user}:${AGENTOPS_DB_PASSWORD:-agentops_pass}@postgres:5432/${AGENTOPS_DB_NAME:-agentops_db}
+      - SYNC_DATABASE_URL=postgresql://${AGENTOPS_DB_USER:-agentops_user}:${AGENTOPS_DB_PASSWORD:-agentops_pass}@postgres:5432/${AGENTOPS_DB_NAME:-agentops_db}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
@@ -82,22 +133,8 @@ services:
       redis:
         condition: service_healthy
 
-  n8n:
-    image: n8nio/n8n:1.70.0
-    container_name: agentops_n8n
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:5678:5678"
-    environment:
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-agentops_admin_pass}
-    volumes:
-      - n8n_data:/home/node/.n8n
-    networks:
-      - agentops-net
-
   frontend:
+    profiles: ["app"]
     build:
       context: .
       dockerfile: infra/docker/frontend.Dockerfile

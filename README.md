@@ -2,19 +2,19 @@
 
 > Self-hosted AI Agent Operations Platform for verifiable, observable, and bounded research execution.
 
-[![Status](https://img.shields.io/badge/Status-In%20Development%20(Phase%201)-orange)](#project-status)
+[![Status](https://img.shields.io/badge/Status-In%20Development%20(Phase%207)-orange)](#project-status)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ---
 
 ## Project Status
 
-**Current Phase**: **Phase 1: Project Definition and Workspace Audit** (In Development)
+**Current Phase**: **Phase 7: The Initial Local Infrastructure** (In Development)
 
 AgentOps is an engineering portfolio project under active development. It demonstrates production-grade AI systems engineering, deterministic orchestration, security boundaries, and observable operations.
 
-- **Current Implementation State**: Baseline architecture, security primitives (SSRF defense, HMAC verification), project configuration, and core project specifications are established.
-- **Application Business Logic**: Planned for subsequent phases. No claims of production readiness or completed business workflows are made at this stage.
+- **Current Implementation State**: Baseline architecture, security primitives, repository scaffold, dependency & runtime compatibility matrices, strict code quality conventions (Ruff, Mypy strict, Pytest), multi-database PostgreSQL initialization, Redis, n8n Community, Docker Compose topology, and operational runbooks are established.
+- **Application Business Logic**: Planned for subsequent phases (Phase 8+). Infrastructure is ready with dormant `app` profiles to avoid unbuilt container failures.
 
 ---
 
@@ -82,6 +82,8 @@ Detailed system documentation is located in the [`docs/`](file:///Users/macbook/
 - [17-dependency-policy.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/17-dependency-policy.md): Dependency management policy, pinning rules, lockfiles, and license compliance.
 - [18-runtime-compatibility.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/18-runtime-compatibility.md): Runtime compatibility matrix, Apple Silicon nuances, and execution topology.
 - [19-development-workflow.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/19-development-workflow.md): Development workflow guide, code-quality standards, and troubleshooting.
+- [local-infrastructure.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/runbooks/local-infrastructure.md): Operational guide for Docker Compose services, healthchecks, loopback security, and multi-database PostgreSQL.
+- [backup-and-restore.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/runbooks/backup-and-restore.md): Procedures for database dumps, Redis persistence, volume backups, and safe non-destructive resets.
 - [repository-scaffold.md](file:///Users/macbook/Downloads/Github_repo/agentops/docs/audits/repository-scaffold.md): Repository structure audit and conformance matrix.
 - **Architecture Decision Records (ADRs)**:
   - [ADR-001: Core Technology Stack Selection](file:///Users/macbook/Downloads/Github_repo/agentops/docs/adr/ADR-001-technology-stack.md)
@@ -123,9 +125,21 @@ pytest services/backend/tests
 # Or use the Makefile
 make test
 
-# Verify formatting and linting
-ruff check .
-ruff format --check .
+# Verify formatting, linting, and type checking
+make validate
+```
+
+### 3. Start Local Infrastructure Services
+
+```bash
+# Verify Docker Compose topology and environment variables
+docker compose -p agentops config
+
+# Start PostgreSQL, Redis, and n8n Community in background
+docker compose -p agentops up -d
+
+# Inspect healthchecks and container status
+docker compose -p agentops ps
 ```
 
 ---

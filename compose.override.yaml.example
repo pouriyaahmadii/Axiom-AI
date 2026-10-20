@@ -1,0 +1,23 @@
+# ==============================================================================
+# AgentOps - Local Development Docker Compose Override Example
+#
+# Usage:
+#   cp compose.override.yaml.example compose.override.yaml
+#
+# When this file is active, Docker Compose publishes PostgreSQL (5432) and
+# Redis (6379) to loopback (127.0.0.1) on the host machine.
+#
+# PORT RULES (from AGENTS.md):
+#   - PostgreSQL host port: 5432
+#   - Redis host port: 6379
+#   - FORBIDDEN ports: 8080, 5433, 6380, 6333 (reserved for other local workspaces)
+# ==============================================================================
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
