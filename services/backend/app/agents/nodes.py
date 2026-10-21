@@ -149,11 +149,57 @@ def validate_plan_node(state: AgentState) -> dict[str, Any]:
     }
 
 
+# Stage 3b: Review execution plan when required (HITL Checkpoint)
+def check_plan_approval_node(state: AgentState) -> dict[str, Any]:
+    """Check if synthesized execution plan requires operator approval before execution."""
+    if state.get("fatal_error") or state.get("status") == "ABORTED_BY_OPERATOR":
+        return {}
+
+    constraints = dict(state.get("constraints") or {})
+    requires_approval = bool(
+        state.get("requires_plan_approval")
+        or constraints.get("requires_plan_approval")
+        or settings.REQUIRE_PLAN_APPROVAL
+    )
+
+    if not requires_approval or state.get("plan_approved", False):
+        return {"plan_approved": True}
+
+    plan = state.get("plan", [])
+    verdict = interrupt(
+        {
+            "approval_required": True,
+            "action": "plan_review",
+            "total_steps": len(plan),
+            "plan": plan,
+            "rationale": state.get("plan_rationale"),
+        }
+    )
+
+    decision = (
+        verdict
+        if isinstance(verdict, str)
+        else (verdict.get("verdict") if isinstance(verdict, dict) else "approved")
+    )
+    decision_str = str(decision or "approved").lower()
+    notes = verdict.get("operator_notes") if isinstance(verdict, dict) else None
+
+    if decision_str not in ("approved", "yes", "true"):
+        logger.warning("plan_approval_rejected", verdict=decision_str, notes=notes)
+        return {
+            "fatal_error": f"Operator rejected execution plan: {notes or 'No reason provided'}",
+            "status": "ABORTED_BY_OPERATOR",
+        }
+
+    logger.info("plan_approval_granted")
+    return {"plan_approved": True}
+
+
 # Stage 4: Wait for approval when required (Human-in-the-Loop)
 def check_approval_node(state: AgentState) -> dict[str, Any]:
     """Check if current step requires operator approval and pause execution via interrupt."""
-    if state.get("fatal_error"):
-        return {"status": "FAILED"}
+    if state.get("fatal_error") or state.get("status") == "ABORTED_BY_OPERATOR":
+        return {}
 
     step = state.get("current_step")
     if not step:
@@ -165,6 +211,7 @@ def check_approval_node(state: AgentState) -> dict[str, Any]:
         verdict = interrupt(
             {
                 "approval_required": True,
+                "action": "step_execution",
                 "step_identifier": step_id,
                 "title": step.get("title"),
                 "tool_name": step.get("tool_name"),
@@ -179,10 +226,14 @@ def check_approval_node(state: AgentState) -> dict[str, Any]:
             else (verdict.get("verdict") if isinstance(verdict, dict) else "approved")
         )
         decision_str = str(decision or "approved").lower()
+        notes = verdict.get("operator_notes") if isinstance(verdict, dict) else None
+
         if decision_str not in ("approved", "yes", "true"):
-            logger.warning("step_approval_rejected", step_id=step_id, verdict=decision_str)
+            logger.warning(
+                "step_approval_rejected", step_id=step_id, verdict=decision_str, notes=notes
+            )
             return {
-                "fatal_error": f"Operator rejected execution of step '{step_id}'.",
+                "fatal_error": f"Operator rejected execution of step '{step_id}': {notes or 'No reason provided'}",
                 "status": "ABORTED_BY_OPERATOR",
             }
 
@@ -420,6 +471,52 @@ def validate_report_node(state: AgentState) -> dict[str, Any]:
 
     logger.info("report_structure_validated_cleanly")
     return {}
+
+
+# Stage 9b: Review completed report when required (HITL Checkpoint)
+def check_report_approval_node(state: AgentState) -> dict[str, Any]:
+    """Check if completed report requires operator review before finalization."""
+    if state.get("fatal_error") or state.get("status") == "ABORTED_BY_OPERATOR":
+        return {}
+
+    constraints = dict(state.get("constraints") or {})
+    requires_approval = bool(
+        state.get("requires_report_approval")
+        or constraints.get("requires_report_approval")
+        or settings.REQUIRE_REPORT_APPROVAL
+    )
+
+    if not requires_approval or state.get("report_approved", False):
+        return {"report_approved": True}
+
+    report = state.get("final_report", {})
+    verdict = interrupt(
+        {
+            "approval_required": True,
+            "action": "report_review",
+            "title": report.get("title") if report else "Report Draft",
+            "executive_summary": report.get("executive_summary") if report else "",
+            "report": report,
+        }
+    )
+
+    decision = (
+        verdict
+        if isinstance(verdict, str)
+        else (verdict.get("verdict") if isinstance(verdict, dict) else "approved")
+    )
+    decision_str = str(decision or "approved").lower()
+    notes = verdict.get("operator_notes") if isinstance(verdict, dict) else None
+
+    if decision_str not in ("approved", "yes", "true"):
+        logger.warning("report_approval_rejected", verdict=decision_str, notes=notes)
+        return {
+            "fatal_error": f"Operator rejected completed report: {notes or 'No reason provided'}",
+            "status": "ABORTED_BY_OPERATOR",
+        }
+
+    logger.info("report_approval_granted")
+    return {"report_approved": True}
 
 
 # Stage 10: Finalize the run

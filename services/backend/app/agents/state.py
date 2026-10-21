@@ -55,6 +55,10 @@ class AgentState(TypedDict, total=False):
     approval_status: str | None
     approval_token: str | None
     approval_action: dict[str, Any] | None
+    requires_plan_approval: bool
+    plan_approved: bool
+    requires_report_approval: bool
+    report_approved: bool
 
     # 11. Final report reference & lifecycle status
     final_report: dict[str, Any] | None

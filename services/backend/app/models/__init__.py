@@ -12,6 +12,7 @@ from app.models.enums import (
     ToolInvocationStatus,
 )
 from app.models.evidence import EvidenceItem
+from app.models.graph_checkpoint import GraphCheckpoint
 from app.models.llm import LLMCall
 from app.models.outbox import OutboxEvent
 from app.models.report import Report
@@ -27,6 +28,7 @@ __all__ = [
     "AuditEventType",
     "AuditLogImmutableError",
     "EvidenceItem",
+    "GraphCheckpoint",
     "LLMCall",
     "LLMCallStatus",
     "OutboxEvent",

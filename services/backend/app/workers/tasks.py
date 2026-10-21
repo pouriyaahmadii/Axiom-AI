@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import structlog
@@ -259,20 +259,46 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
                         select(Approval).where(Approval.step_id == step.id)
                     ).scalar_one_or_none()
 
-                    if not approval or approval.status != ApprovalStatus.APPROVED:
+                    current_payload = {
+                        "tool": step.tool_name,
+                        "parameters": step.parameters,
+                    }
+
+                    # Check for changed payload or expired approval
+                    is_stale_or_expired = False
+                    if approval:
+                        if approval.is_expired():
+                            approval.status = ApprovalStatus.EXPIRED
+                            is_stale_or_expired = True
+                        elif not approval.matches_payload(current_payload):
+                            logger.warning(
+                                "stale_approval_payload_mismatch",
+                                run_id=run_id,
+                                step_id=str(step.id),
+                                registered_hash=approval.payload_hash,
+                            )
+                            is_stale_or_expired = True
+
+                    if (
+                        not approval
+                        or approval.status != ApprovalStatus.APPROVED
+                        or is_stale_or_expired
+                    ):
                         run = session.execute(select(Run).where(Run.id == run_uuid)).scalar_one()
                         run.status = RunStatus.AWAITING_APPROVAL
 
-                        if not approval:
+                        if not approval or is_stale_or_expired:
                             new_approval = Approval(
                                 run_id=run.id,
                                 step_id=step.id,
-                                token=generate_secure_token(),
+                                action="step_execution",
+                                payload_hash=Approval.compute_payload_hash(current_payload),
+                                version=1 if not approval else approval.version + 1,
+                                approval_token=generate_secure_token(),
                                 status=ApprovalStatus.PENDING,
-                                proposed_action={
-                                    "tool": step.tool_name,
-                                    "parameters": step.parameters,
-                                },
+                                proposed_action=current_payload,
+                                expires_at=datetime.now(timezone.utc)
+                                + timedelta(seconds=settings.APPROVAL_TIMEOUT_SECONDS),
                             )
                             session.add(new_approval)
 
@@ -283,7 +309,11 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
                                 correlation_id=correlation_id,
                                 event_type=AuditEventType.APPROVAL_REQUESTED.value,
                                 actor="celery_worker",
-                                payload={"step_identifier": step.step_identifier},
+                                payload={
+                                    "step_identifier": step.step_identifier,
+                                    "action": "step_execution",
+                                    "payload_hash": Approval.compute_payload_hash(current_payload),
+                                },
                             )
                         )
                         session.commit()

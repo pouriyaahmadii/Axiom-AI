@@ -95,6 +95,19 @@ class Settings(BaseSettings):
         default=2, ge=0, le=5, description="Maximum automated retries per failed step"
     )
     BUDGET_USD_LIMIT: float = Field(default=1.00, ge=0.0, description="Cost budget limit in USD")
+    APPROVAL_TIMEOUT_SECONDS: int = Field(
+        default=86400,
+        ge=60,
+        description="Default expiration timeout for human approval requests in seconds",
+    )
+    REQUIRE_PLAN_APPROVAL: bool = Field(
+        default=False,
+        description="Require human approval for execution plans before execution starts",
+    )
+    REQUIRE_REPORT_APPROVAL: bool = Field(
+        default=False,
+        description="Require human approval for completed reports before finalization",
+    )
 
     # Observability & Logging
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")

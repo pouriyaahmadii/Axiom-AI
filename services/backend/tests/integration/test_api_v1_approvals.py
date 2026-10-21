@@ -118,9 +118,10 @@ async def test_approval_already_resolved_conflict(async_client: AsyncClient, asy
     async_db_session.add(approval)
     await async_db_session.commit()
 
+    # Conflict: attempting to reject an already-approved request fails with 409 Conflict
     response = await async_client.post(
-        f"/api/v1/approvals/{approval.id}/approve",
-        json={"operator_notes": "Trying again"},
+        f"/api/v1/approvals/{approval.id}/reject",
+        json={"operator_notes": "Trying to reject already approved gate"},
     )
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "INVALID_STATE_TRANSITION"

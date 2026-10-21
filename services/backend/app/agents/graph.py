@@ -5,11 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from app.agents.nodes import (
     check_approval_node,
+    check_plan_approval_node,
+    check_report_approval_node,
     evaluate_evidence_node,
     execute_task_node,
     finalize_run_node,
@@ -21,6 +22,7 @@ from app.agents.nodes import (
     validate_step_result_node,
 )
 from app.agents.state import AgentState
+from app.repositories.checkpointer import DurableCheckpointSaver
 
 
 # Conditional routing predicates
@@ -36,6 +38,12 @@ def route_after_plan_validation(state: AgentState) -> str:
     # If repair attempt triggered and current_step is None, loop back to plan generation
     if state.get("plan_repair_attempts", 0) > 0 and state.get("current_step") is None:
         return "generate_plan"
+    return "check_plan_approval"
+
+
+def route_after_plan_approval(state: AgentState) -> str:
+    if state.get("fatal_error") or state.get("status") == "ABORTED_BY_OPERATOR":
+        return "finalize_run"
     return "check_approval"
 
 
@@ -66,20 +74,28 @@ def route_after_report_generation(state: AgentState) -> str:
     return "validate_report"
 
 
+def route_after_report_validation(state: AgentState) -> str:
+    if state.get("fatal_error") or state.get("status") == "ABORTED_BY_OPERATOR":
+        return "finalize_run"
+    return "check_report_approval"
+
+
 def build_agent_graph() -> StateGraph:
-    """Construct the bounded StateGraph representing the 10 execution stages."""
+    """Construct the bounded StateGraph representing the execution stages and HITL approval checkpoints."""
     workflow = StateGraph(AgentState)
 
     # 1. Register nodes
     workflow.add_node("validate_request", validate_request_node)
     workflow.add_node("generate_plan", generate_plan_node)
     workflow.add_node("validate_plan", validate_plan_node)
+    workflow.add_node("check_plan_approval", check_plan_approval_node)
     workflow.add_node("check_approval", check_approval_node)
     workflow.add_node("execute_task", execute_task_node)
     workflow.add_node("validate_step_result", validate_step_result_node)
     workflow.add_node("evaluate_evidence", evaluate_evidence_node)
     workflow.add_node("generate_report", generate_report_node)
     workflow.add_node("validate_report", validate_report_node)
+    workflow.add_node("check_report_approval", check_report_approval_node)
     workflow.add_node("finalize_run", finalize_run_node)
 
     # 2. Add edges and conditional transitions
@@ -101,6 +117,15 @@ def build_agent_graph() -> StateGraph:
         route_after_plan_validation,
         {
             "generate_plan": "generate_plan",  # Repair loop
+            "check_plan_approval": "check_plan_approval",
+            "finalize_run": "finalize_run",
+        },
+    )
+
+    workflow.add_conditional_edges(
+        "check_plan_approval",
+        route_after_plan_approval,
+        {
             "check_approval": "check_approval",
             "finalize_run": "finalize_run",
         },
@@ -145,14 +170,23 @@ def build_agent_graph() -> StateGraph:
         },
     )
 
-    workflow.add_edge("validate_report", "finalize_run")
+    workflow.add_conditional_edges(
+        "validate_report",
+        route_after_report_validation,
+        {
+            "check_report_approval": "check_report_approval",
+            "finalize_run": "finalize_run",
+        },
+    )
+
+    workflow.add_edge("check_report_approval", "finalize_run")
     workflow.add_edge("finalize_run", END)
 
     return workflow
 
 
 def create_agent_graph(checkpointer: BaseCheckpointSaver | None = None) -> Any:
-    """Compile the agent StateGraph with a checkpoint saver for durable state and HITL pause/resume."""
-    saver = checkpointer or MemorySaver()
+    """Compile the agent StateGraph with a durable checkpoint saver for persistent state and HITL pause/resume."""
+    saver = checkpointer or DurableCheckpointSaver()
     workflow = build_agent_graph()
     return workflow.compile(checkpointer=saver)

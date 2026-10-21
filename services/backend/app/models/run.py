@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from app.models.approval import Approval
     from app.models.audit import AuditEvent
     from app.models.evidence import EvidenceItem
+    from app.models.graph_checkpoint import GraphCheckpoint
     from app.models.llm import LLMCall
     from app.models.report import Report
     from app.models.source import Source
@@ -149,6 +150,12 @@ class Run(Base, TimestampMixin):
     )
     audit_events: Mapped[list[AuditEvent]] = relationship(
         "AuditEvent",
+        back_populates="run",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    graph_checkpoints: Mapped[list[GraphCheckpoint]] = relationship(
+        "GraphCheckpoint",
         back_populates="run",
         cascade="all, delete-orphan",
         lazy="selectin",
