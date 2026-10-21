@@ -1,4 +1,4 @@
-.PHONY: help install install-web lint lint-fix format format-check type-check test test-unit test-integration test-evals test-frontend validate validate-all validate-n8n scan-secrets audit worker up down clean
+.PHONY: help install install-web lint lint-fix format format-check type-check test test-unit test-integration test-contract test-evals test-frontend validate validate-all validate-n8n scan-secrets audit worker up down clean
 
 PYTHON := .venv/bin/python
 PYTEST := .venv/bin/pytest
@@ -47,6 +47,7 @@ format:
 
 format-check:
 	$(RUFF) format --check .
+	npm --prefix apps/web run format:check
 
 type-check:
 	$(MYPY) services/backend/app services/backend/tests
@@ -59,6 +60,9 @@ test-unit:
 
 test-integration:
 	$(PYTEST) services/backend/tests/integration
+
+test-contract:
+	$(PYTEST) -m contract -v
 
 test-evals:
 	$(PYTEST) services/backend/tests/evals -v

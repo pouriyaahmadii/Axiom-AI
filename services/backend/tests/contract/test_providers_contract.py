@@ -17,6 +17,8 @@ from app.schemas.llm import (
     ReportDraftOutput,
 )
 
+pytestmark = pytest.mark.contract
+
 
 def _mock_openai_client() -> httpx.Client:
     mock_client = MagicMock(spec=httpx.Client)
