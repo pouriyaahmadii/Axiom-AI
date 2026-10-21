@@ -1,11 +1,16 @@
 """Correlation ID and request lifecycle middleware."""
 
+from __future__ import annotations
+
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 
-import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.observability.context import correlation_context
+from app.observability.tracer import extract_traceparent, trace_span
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
@@ -20,14 +25,29 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
             or request.headers.get("X-Request-ID")
             or str(uuid.uuid4())
         )
-
         request.state.correlation_id = correlation_id
-        structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 
-        try:
+        # Extract W3C trace context if present
+        traceparent = request.headers.get("traceparent")
+        if traceparent:
+            extract_traceparent({"traceparent": traceparent})
+
+        start_time = time.perf_counter()
+        with (
+            correlation_context(correlation_id=correlation_id),
+            trace_span(
+                "http.request",
+                {
+                    "http.method": request.method,
+                    "http.path": request.url.path,
+                    "http.route": request.url.path,
+                },
+            ) as span,
+        ):
             response = await call_next(request)
-        finally:
-            structlog.contextvars.unbind_contextvars("correlation_id")
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+            span.set_attribute("http.status_code", response.status_code)
+            span.set_attribute("http.duration_ms", round(duration_ms, 2))
 
         response.headers["X-Correlation-ID"] = correlation_id
         return response

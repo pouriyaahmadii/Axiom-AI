@@ -113,6 +113,9 @@ class ToolRegistry:
         if not self.is_allowed(tool_name):
             duration = (time.perf_counter() - start_time) * 1000.0
             logger.error("unregistered_tool_execution_blocked", tool_id=tool_name)
+            from app.observability import metrics
+
+            metrics.record_tool_call(tool_name, "blocked", duration / 1000.0)
             return ToolResult(
                 success=False,
                 tool_id=tool_name,
@@ -136,8 +139,21 @@ class ToolRegistry:
         if timeout_seconds:
             exec_context["timeout_seconds"] = timeout_seconds
 
-        result = tool.run_validated(raw_params=parameters, context=exec_context)
-        return result
+        from app.observability import metrics, trace_span
+
+        with trace_span(
+            "tool.execute",
+            {
+                "tool.name": tool_name,
+                "tool.id": tool.tool_id,
+                "tool.risk_level": tool.metadata.risk_level.value,
+            },
+        ):
+            result = tool.run_validated(raw_params=parameters, context=exec_context)
+            duration_sec = result.duration_ms / 1000.0
+            status_str = "success" if result.success else "failed"
+            metrics.record_tool_call(tool_name, status_str, duration_sec)
+            return result
 
 
 # Global singleton registry

@@ -34,7 +34,10 @@ class EvidencePersistenceService:
         source_id_to_db_id: dict[str, uuid.UUID] = {}
 
         # 1. Persist Source records
+        from app.observability import metrics
+
         for src_record in pipeline.list_sources():
+            metrics.record_source_retrieved(src_record.publisher_or_host, 200)
             src_stmt = select(Source).where(Source.run_id == run_id, Source.url == src_record.url)
             src_result = await session.execute(src_stmt)
             existing_src = src_result.scalar_one_or_none()
@@ -96,6 +99,11 @@ class EvidencePersistenceService:
         # 3. Persist Validated Report if provided
         persisted_report: Report | None = None
         if report:
+            total_citations = sum(len(c.evidence_ids) for c in report.evidence_linked_findings)
+            metrics.record_report_finalized(
+                claims_count=len(report.evidence_linked_findings),
+                citations_count=total_citations,
+            )
             report_stmt = select(Report).where(Report.run_id == run_id)
             report_result = await session.execute(report_stmt)
             existing_report = report_result.scalar_one_or_none()

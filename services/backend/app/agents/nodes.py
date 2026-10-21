@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import functools
+from collections.abc import Callable
 from typing import Any
 
 import structlog
@@ -19,7 +21,35 @@ logger = structlog.get_logger(__name__)
 settings = get_settings()
 
 
+def observable_node(
+    name: str,
+) -> Callable[[Callable[[AgentState], dict[str, Any]]], Callable[[AgentState], dict[str, Any]]]:
+    """Decorator wrapping LangGraph nodes with correlation context and OpenTelemetry spans."""
+
+    def decorator(
+        fn: Callable[[AgentState], dict[str, Any]],
+    ) -> Callable[[AgentState], dict[str, Any]]:
+        @functools.wraps(fn)
+        def wrapper(state: AgentState) -> dict[str, Any]:
+            run_id = str(state.get("run_id")) if state.get("run_id") else None
+            correlation_id = (
+                str(state.get("correlation_id")) if state.get("correlation_id") else None
+            )
+            from app.observability import correlation_context, trace_span
+
+            with (
+                correlation_context(run_id=run_id, correlation_id=correlation_id, node_name=name),
+                trace_span(f"langgraph.node.{name}", {"agentops.node_name": name}),
+            ):
+                return fn(state)
+
+        return wrapper
+
+    return decorator
+
+
 # Stage 1: Validate request
+@observable_node("validate_request")
 def validate_request_node(state: AgentState) -> dict[str, Any]:
     """Validate user research request bounds and initialize execution counters."""
     objective = (state.get("objective") or "").strip()
@@ -59,6 +89,7 @@ def validate_request_node(state: AgentState) -> dict[str, Any]:
 
 
 # Stage 2: Generate structured plan
+@observable_node("generate_plan")
 def generate_plan_node(state: AgentState) -> dict[str, Any]:
     """Invoke LLM provider to synthesize a bounded execution plan."""
     if state.get("fatal_error"):
@@ -105,6 +136,7 @@ def generate_plan_node(state: AgentState) -> dict[str, Any]:
 
 
 # Stage 3: Validate the plan
+@observable_node("validate_plan")
 def validate_plan_node(state: AgentState) -> dict[str, Any]:
     """Validate that plan forms a valid DAG with allowed task types and bounded length."""
     if state.get("fatal_error"):
@@ -150,6 +182,7 @@ def validate_plan_node(state: AgentState) -> dict[str, Any]:
 
 
 # Stage 3b: Review execution plan when required (HITL Checkpoint)
+@observable_node("check_plan_approval")
 def check_plan_approval_node(state: AgentState) -> dict[str, Any]:
     """Check if synthesized execution plan requires operator approval before execution."""
     if state.get("fatal_error") or state.get("status") == "ABORTED_BY_OPERATOR":
@@ -196,6 +229,7 @@ def check_plan_approval_node(state: AgentState) -> dict[str, Any]:
 
 
 # Stage 4: Wait for approval when required (Human-in-the-Loop)
+@observable_node("check_approval")
 def check_approval_node(state: AgentState) -> dict[str, Any]:
     """Check if current step requires operator approval and pause execution via interrupt."""
     if state.get("fatal_error") or state.get("status") == "ABORTED_BY_OPERATOR":
@@ -247,6 +281,7 @@ def check_approval_node(state: AgentState) -> dict[str, Any]:
 
 
 # Stage 5: Execute approved task types (Guarded Tool Sandbox)
+@observable_node("execute_task")
 def execute_task_node(state: AgentState) -> dict[str, Any]:
     """Execute allowlisted task type within safety bounds. Never permits arbitrary code execution."""
     if state.get("fatal_error") or state.get("status") == "ABORTED_BY_OPERATOR":
@@ -334,6 +369,7 @@ def execute_task_node(state: AgentState) -> dict[str, Any]:
 
 
 # Stage 6: Validate step results and capture evidence
+@observable_node("validate_step_result")
 def validate_step_result_node(state: AgentState) -> dict[str, Any]:
     """Validate step outputs and record evidence with cryptographic SHA-256 hashes."""
     if state.get("fatal_error"):
@@ -380,6 +416,7 @@ def validate_step_result_node(state: AgentState) -> dict[str, Any]:
 
 
 # Stage 7: Evaluate evidence completeness and step progression
+@observable_node("evaluate_evidence")
 def evaluate_evidence_node(state: AgentState) -> dict[str, Any]:
     """Check if all planned steps have executed or advance to the next step."""
     if state.get("fatal_error"):
@@ -405,6 +442,7 @@ def evaluate_evidence_node(state: AgentState) -> dict[str, Any]:
 
 
 # Stage 8: Generate report draft
+@observable_node("generate_report")
 def generate_report_node(state: AgentState) -> dict[str, Any]:
     """Invoke LLM to synthesize final structured report from evidence records."""
     if state.get("fatal_error"):
@@ -437,6 +475,7 @@ def generate_report_node(state: AgentState) -> dict[str, Any]:
 
 
 # Stage 9: Validate report structure
+@observable_node("validate_report")
 def validate_report_node(state: AgentState) -> dict[str, Any]:
     """Validate report structure: ensure presence of empirical findings and strategic inferences."""
     if state.get("fatal_error"):
@@ -474,6 +513,7 @@ def validate_report_node(state: AgentState) -> dict[str, Any]:
 
 
 # Stage 9b: Review completed report when required (HITL Checkpoint)
+@observable_node("check_report_approval")
 def check_report_approval_node(state: AgentState) -> dict[str, Any]:
     """Check if completed report requires operator review before finalization."""
     if state.get("fatal_error") or state.get("status") == "ABORTED_BY_OPERATOR":
@@ -520,6 +560,7 @@ def check_report_approval_node(state: AgentState) -> dict[str, Any]:
 
 
 # Stage 10: Finalize the run
+@observable_node("finalize_run")
 def finalize_run_node(state: AgentState) -> dict[str, Any]:
     """Determine terminal status and finalize run state."""
     if state.get("status") == "ABORTED_BY_OPERATOR":

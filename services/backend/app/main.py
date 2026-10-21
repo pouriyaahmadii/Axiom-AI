@@ -53,6 +53,9 @@ def make_error_response(
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan context manager for startup and shutdown routines."""
     setup_logging(level=settings.LOG_LEVEL, log_format=settings.LOG_FORMAT)
+    from app.observability.tracer import init_tracer
+
+    init_tracer()
     logger.info(
         "Application starting up",
         app_name=settings.APP_NAME,

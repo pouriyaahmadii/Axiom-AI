@@ -49,3 +49,19 @@ async def system_info() -> dict[str, Any]:
             "search": settings.SEARCH_PROVIDER,
         },
     }
+
+
+@router.get("/metrics", tags=["Observability"], summary="Operational telemetry metrics")
+async def get_metrics_endpoint(format: str = "prometheus") -> Any:
+    """Export operational telemetry metrics in Prometheus or structured JSON format."""
+    from fastapi.responses import PlainTextResponse
+
+    from app.observability.metrics import metrics
+
+    if format.lower() == "json":
+        return metrics.get_summary()
+
+    return PlainTextResponse(
+        content=metrics.get_prometheus_format(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )

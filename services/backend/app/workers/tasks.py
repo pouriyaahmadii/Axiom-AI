@@ -88,6 +88,19 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
     - Deterministic errors fail immediately; transient errors retry with backoff.
     - Timeouts handled cleanly via SoftTimeLimitExceeded.
     """
+    from app.observability import (
+        metrics,
+        set_celery_task_context,
+        set_correlation_id,
+        set_run_id,
+        set_step_context,
+    )
+
+    task_id = getattr(self.request, "id", None)
+    set_run_id(run_id)
+    set_correlation_id(correlation_id)
+    set_celery_task_context(task_id, getattr(self, "name", "agentops.execute_run"))
+
     logger.info("execute_run_started", run_id=run_id, attempt=self.request.retries + 1)
     run_uuid = uuid.UUID(run_id)
 
@@ -96,6 +109,17 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
         if not run:
             logger.error("execute_run_not_found", run_id=run_id)
             return {"status": "NOT_FOUND", "run_id": run_id}
+
+        # Record queue wait time from run creation to worker start
+        if run.created_at:
+            now_utc = datetime.now(timezone.utc)
+            created_at_utc = (
+                run.created_at
+                if run.created_at.tzinfo
+                else run.created_at.replace(tzinfo=timezone.utc)
+            )
+            queue_wait = max(0.0, (now_utc - created_at_utc).total_seconds())
+            metrics.record_queue_wait(queue_wait)
 
         # 1. Check for cancellation at initial boundary
         if run.status == RunStatus.CANCELLED:
@@ -131,6 +155,7 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
         # 4. Record execution attempt
         run.attempt_count += 1
         if run.status == RunStatus.QUEUED:
+            metrics.record_run_started()
             run.status = RunStatus.PLANNING
             session.add(
                 AuditEvent(
@@ -188,6 +213,16 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
                     completion_preview=sanitize_prompt_preview(plan_res.raw_content or ""),
                 )
                 session.add(llm_call)
+
+                metrics.record_llm_request(
+                    provider=plan_res.provider,
+                    model=plan_res.model,
+                    prompt_tokens=plan_res.usage.prompt_tokens,
+                    completion_tokens=plan_res.usage.completion_tokens,
+                    cost_usd=float(plan_res.usage.cost_usd),
+                    duration_seconds=plan_res.usage.latency_ms / 1000.0,
+                    status="success",
+                )
 
                 for step_def in plan_steps_data:
                     step_entity = RunStep(
@@ -329,6 +364,7 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
                 # Persist State BEFORE step execution
                 step.status = StepStatus.RUNNING
                 step.started_at = datetime.now(timezone.utc)
+                set_step_context(str(step.id), step.step_index)
                 session.add(
                     AuditEvent(
                         run_id=run_uuid,
@@ -356,6 +392,8 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
                     # Persist State AFTER successful step execution
                     step.status = StepStatus.COMPLETED
                     step.completed_at = datetime.now(timezone.utc)
+                    step_duration_sec = (step.completed_at - step.started_at).total_seconds()
+                    metrics.record_step_executed(step.tool_name, "COMPLETED", step_duration_sec)
                     session.add(
                         AuditEvent(
                             run_id=run_uuid,
@@ -373,6 +411,8 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
                     step.status = StepStatus.FAILED
                     step.error_message = str(err)
                     step.completed_at = datetime.now(timezone.utc)
+                    step_duration_sec = (step.completed_at - step.started_at).total_seconds()
+                    metrics.record_step_executed(step.tool_name, "FAILED", step_duration_sec)
 
                     run = session.execute(select(Run).where(Run.id == run_uuid)).scalar_one()
                     run.status = RunStatus.FAILED
@@ -380,6 +420,14 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
                         f"Step '{step.step_identifier}' failed with deterministic error: {err}"
                     )
                     run.completed_at = datetime.now(timezone.utc)
+                    total_run_duration = (
+                        (
+                            run.completed_at - run.created_at.replace(tzinfo=timezone.utc)
+                        ).total_seconds()
+                        if run.created_at
+                        else 0.0
+                    )
+                    metrics.record_run_completed(RunStatus.FAILED.value, total_run_duration)
 
                     session.add(
                         AuditEvent(
@@ -392,13 +440,19 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
                         )
                     )
                     session.commit()
-                    logger.error("step_failed_deterministic", run_id=run_id, error=str(err))
+                    logger.error(
+                        "step_failed_deterministic",
+                        run_id=run_id,
+                        step_id=str(step.id),
+                        error=str(err),
+                    )
                     return {"status": "FAILED_DETERMINISTIC_ERROR", "error": str(err)}
 
                 except TransientWorkerError as err:
                     # Transient error: handle step-level retries or raise to Celery
                     step.retry_count += 1
                     step.error_message = str(err)
+                    metrics.record_step_executed(step.tool_name, "RETRYING", 0.0)
                     session.add(
                         AuditEvent(
                             run_id=run_uuid,
@@ -413,6 +467,7 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
                     logger.warning(
                         "step_transient_retry",
                         run_id=run_id,
+                        step_id=str(step.id),
                         step_index=step.step_index,
                         retry=step.retry_count,
                     )
@@ -437,6 +492,12 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
 
             run.status = RunStatus.COMPLETED
             run.completed_at = datetime.now(timezone.utc)
+            total_run_duration = (
+                (run.completed_at - run.created_at.replace(tzinfo=timezone.utc)).total_seconds()
+                if run.created_at
+                else 0.0
+            )
+            metrics.record_run_completed(RunStatus.COMPLETED.value, total_run_duration)
             session.add(
                 AuditEvent(
                     run_id=run.id,

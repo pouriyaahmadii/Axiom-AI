@@ -12,6 +12,8 @@ def setup_logging(level: str = "INFO", log_format: str = "json") -> None:
     try:
         import structlog
 
+        from app.observability.redactor import redact_log_event
+
         shared_processors: list[Any] = [
             structlog.contextvars.merge_contextvars,
             structlog.stdlib.add_logger_name,
@@ -20,6 +22,7 @@ def setup_logging(level: str = "INFO", log_format: str = "json") -> None:
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
+            redact_log_event,
         ]
 
         renderer: Any

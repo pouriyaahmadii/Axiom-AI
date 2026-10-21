@@ -25,6 +25,12 @@ from app.models import (
 settings = get_settings()
 
 
+def _to_utc(dt: datetime | None) -> datetime | None:
+    if not dt:
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
 async def create_approval_request(
     session: AsyncSession,
     run_id: uuid.UUID,
@@ -165,6 +171,15 @@ async def approve_step(
     approval.resolved_by = resolved_by or "operator"
     approval.resolved_at = datetime.now(timezone.utc)
 
+    from app.observability import metrics
+
+    res_utc = _to_utc(approval.resolved_at)
+    cre_utc = _to_utc(approval.created_at)
+    wait_sec = (res_utc - cre_utc).total_seconds() if (res_utc and cre_utc) else 0.0
+    metrics.record_approval_event(
+        action=approval.action, verdict="APPROVED", wait_seconds=max(0.0, wait_sec)
+    )
+
     # 6. Update parent run state to resume execution
     if run.status == RunStatus.AWAITING_APPROVAL:
         run.status = RunStatus.RUNNING
@@ -253,6 +268,15 @@ async def reject_step(
     approval.operator_notes = operator_notes
     approval.resolved_by = resolved_by or "operator"
     approval.resolved_at = datetime.now(timezone.utc)
+
+    from app.observability import metrics
+
+    res_utc = _to_utc(approval.resolved_at)
+    cre_utc = _to_utc(approval.created_at)
+    wait_sec = (res_utc - cre_utc).total_seconds() if (res_utc and cre_utc) else 0.0
+    metrics.record_approval_event(
+        action=approval.action, verdict="REJECTED", wait_seconds=max(0.0, wait_sec)
+    )
 
     # 5. Update parent run state
     if abort_run:
