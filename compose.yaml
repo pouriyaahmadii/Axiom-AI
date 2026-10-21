@@ -28,6 +28,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M
 
   redis:
     image: redis:7.2.6-alpine
@@ -45,6 +52,13 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          memory: 64M
 
   n8n:
     image: n8nio/n8n:1.70.0
@@ -81,25 +95,52 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M
 
-  # Application services (Profile 'app'):
-  # Kept dormant during infrastructure provisioning to prevent unbuilt container failures.
-  # Boot with: docker compose --profile app up -d
   backend-api:
-    profiles: ["app"]
+    image: agentops-backend:latest
     build:
       context: .
       dockerfile: infra/docker/backend.Dockerfile
     container_name: agentops_api
     restart: unless-stopped
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      - ENVIRONMENT=development
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - APP_NAME=AgentOps
+      - DEBUG=${DEBUG:-false}
       - DATABASE_URL=postgresql+asyncpg://${AGENTOPS_DB_USER:-agentops_user}:${AGENTOPS_DB_PASSWORD:-agentops_pass}@postgres:5432/${AGENTOPS_DB_NAME:-agentops_db}
       - SYNC_DATABASE_URL=postgresql://${AGENTOPS_DB_USER:-agentops_user}:${AGENTOPS_DB_PASSWORD:-agentops_pass}@postgres:5432/${AGENTOPS_DB_NAME:-agentops_db}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - LLM_PROVIDER=${LLM_PROVIDER:-mock}
+      - SEARCH_PROVIDER=${SEARCH_PROVIDER:-mock}
+      - MOCK_DETERMINISTIC_SEED=${MOCK_DETERMINISTIC_SEED:-42}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-llama3.2}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - API_KEY=${API_KEY:-agentops-dev-internal-key}
+      - CORS_ORIGINS=["http://127.0.0.1:3000","http://localhost:3000"]
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://n8n:5678/webhook/agentops-notifications}
+      - N8N_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET:-n8n_local_webhook_secret_for_hmac_verification}
+      - MAX_PLAN_STEPS=${MAX_PLAN_STEPS:-10}
+      - MAX_EXECUTION_SECONDS=${MAX_EXECUTION_SECONDS:-300}
+      - STEP_TIMEOUT_SECONDS=${STEP_TIMEOUT_SECONDS:-60}
+      - BUDGET_USD_LIMIT=${BUDGET_USD_LIMIT:-1.00}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - OTEL_ENABLED=${OTEL_ENABLED:-false}
     ports:
       - "127.0.0.1:8000:8000"
     networks:
@@ -109,22 +150,56 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M
 
   backend-worker:
-    profiles: ["app"]
+    image: agentops-backend:latest
     build:
       context: .
       dockerfile: infra/docker/backend.Dockerfile
     container_name: agentops_worker
     restart: unless-stopped
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      - ENVIRONMENT=development
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - APP_NAME=AgentOps
       - DATABASE_URL=postgresql+asyncpg://${AGENTOPS_DB_USER:-agentops_user}:${AGENTOPS_DB_PASSWORD:-agentops_pass}@postgres:5432/${AGENTOPS_DB_NAME:-agentops_db}
       - SYNC_DATABASE_URL=postgresql://${AGENTOPS_DB_USER:-agentops_user}:${AGENTOPS_DB_PASSWORD:-agentops_pass}@postgres:5432/${AGENTOPS_DB_NAME:-agentops_db}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - LLM_PROVIDER=${LLM_PROVIDER:-mock}
+      - SEARCH_PROVIDER=${SEARCH_PROVIDER:-mock}
+      - MOCK_DETERMINISTIC_SEED=${MOCK_DETERMINISTIC_SEED:-42}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-llama3.2}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - API_KEY=${API_KEY:-agentops-dev-internal-key}
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://n8n:5678/webhook/agentops-notifications}
+      - N8N_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET:-n8n_local_webhook_secret_for_hmac_verification}
+      - MAX_PLAN_STEPS=${MAX_PLAN_STEPS:-10}
+      - MAX_EXECUTION_SECONDS=${MAX_EXECUTION_SECONDS:-300}
+      - STEP_TIMEOUT_SECONDS=${STEP_TIMEOUT_SECONDS:-60}
+      - BUDGET_USD_LIMIT=${BUDGET_USD_LIMIT:-1.00}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - OTEL_ENABLED=${OTEL_ENABLED:-false}
     networks:
       - agentops-net
     depends_on:
@@ -132,9 +207,24 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      backend-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import redis; r = redis.Redis.from_url('redis://redis:6379/1'); r.ping()\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 768M
+        reservations:
+          memory: 256M
 
   frontend:
-    profiles: ["app"]
+    image: agentops-frontend:latest
     build:
       context: .
       dockerfile: infra/docker/frontend.Dockerfile
@@ -143,11 +233,52 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://127.0.0.1:8000/api/v1
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8000/api/v1}
     networks:
       - agentops-net
     depends_on:
-      - backend-api
+      backend-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # Optional Containerized Ollama Service (Activated only via `--profile ollama`)
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:0.4.4
+    container_name: agentops_ollama
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - agentops-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:11434/api/tags || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 4096M
+        reservations:
+          memory: 1024M
 
 networks:
   agentops-net:
@@ -157,3 +288,4 @@ volumes:
   postgres_data:
   redis_data:
   n8n_data:
+  ollama_data:

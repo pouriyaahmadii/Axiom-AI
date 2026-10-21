@@ -1,130 +1,195 @@
 # Local Infrastructure Runbook (`docs/runbooks/local-infrastructure.md`)
 
-This runbook documents the architecture, lifecycle management, security controls, and operational procedures for the local AgentOps infrastructure services managed via Docker Compose.
+This runbook documents the architecture, lifecycle management, security controls, and operational procedures for the local AgentOps infrastructure and application services managed via Docker Compose (Phase 22).
 
 ---
 
 ## 1. Architecture & Service Topology
 
-AgentOps utilizes Docker Compose to establish an isolated, local runtime environment consisting of core persistent infrastructure services and application containers.
+AgentOps utilizes Docker Compose to establish an isolated, local-first runtime environment consisting of 6 core cooperating services and an optional local model container:
 
 ```
-+-------------------------------------------------------------------------------+
-| Host Machine (Developer Workstation)                                          |
-|                                                                               |
-|  [ Web Browser ] ──────> http://127.0.0.1:5678 (Loopback Only)                |
-|                                   │                                           |
-|  [ Local Python Host ] ───(optional override)───> 127.0.0.1:5432 / 6379       |
-+───────────────────────────────────┼───────────────────────────────────────────+
-                                    │
-                                    ▼
-+───────────────────────────────────────────────────────────────────────────────+
-| Docker Network: `agentops-net` (Bridge, Isolated)                            |
-|                                                                               |
-|   +-----------------------+              +--------------------------------+   |
-|   | Container:            |              | Container:                     |   |
-|   | `agentops_n8n`        |              | `agentops_postgres`            |   |
-|   | Image: n8n:1.70.0     |─────────────>| Image: postgres:16.4-alpine    |   |
-|   | User: node (1000)     |  SQL (5432)  | DBs: agentops_db, n8n_db       |   |
-|   +-----------------------+              +--------------------------------+   |
-|               │                                       │                       |
-|               ▼                                       ▼                       |
-|        [n8n_data vol]                        [postgres_data vol]              |
-|                                                                               |
-|   +-----------------------+                                                   |
-|   | Container:            |                                                   |
-|   | `agentops_redis`      |                                                   |
-|   | Image: redis:7.2.6    |                                                   |
-|   +-----------------------+                                                   |
-|               │                                                               |
-|               ▼                                                               |
-|        [redis_data vol]                                                       |
-+───────────────────────────────────────────────────────────────────────────────+
++─────────────────────────────────────────────────────────────────────────────────────────+
+| Host Machine (Developer Workstation)                                                    |
+|                                                                                         |
+|  [ Web Browser ] ──────> http://127.0.0.1:3000 (Next.js Dashboard)                      |
+|  [ API Client ]  ──────> http://127.0.0.1:8000 (FastAPI Swagger & Endpoints)            |
+|  [ n8n UI ]      ──────> http://127.0.0.1:5678 (n8n Workflow Editor)                    |
+|                                                                                         |
+|  [ Ollama Daemon ] ────> http://127.0.0.1:11434 (Optional Host-Native Model Engine)     |
+|  [ Local Python Host ] ─(via compose.override.yaml)─> 127.0.0.1:5432 / 6379             |
++────────────────────────────────────────────┬────────────────────────────────────────────+
+                                             │ Loopback Only (127.0.0.1)
+                                             ▼
++─────────────────────────────────────────────────────────────────────────────────────────+
+| Docker Network: `agentops-net` (Bridge, Isolated)                                       |
+|                                                                                         |
+|   +────────────────────────+                +─────────────────────────+                 |
+|   | Container:             |   HTTP:8000    | Container:              |                 |
+|   | `agentops_frontend`    |───────────────>| `agentops_api`          |                 |
+|   | Image: frontend:latest | (proxy/ingress)| Image: backend:latest   |                 |
+|   | User: nextjs (1001)    |                | User: appuser (10001)   |                 |
+|   +────────────────────────+                +────────────┬────────────+                 |
+|                                                          │                              |
+|   +────────────────────────+                             │ Celery & Postgres            |
+|   | Container:             |                             │                              |
+|   | `agentops_worker`      |<────────────────────────────┤                              |
+|   | Image: backend:latest  |                             │                              |
+|   | User: appuser (10001)  |                             ▼                              |
+|   +───────────┬────────────+                +─────────────────────────+                 |
+|               │                             | Container:              |                 |
+|               │                             | `agentops_postgres`     |                 |
+|               │ Redis & Tasks               | Image: postgres:16.4    |                 |
+|               │                             | DBs: agentops_db, n8n_db|                 |
+|               ▼                             +────────────┬────────────+                 |
+|   +────────────────────────+                             │                              |
+|   | Container:             |                             │ SQL:5432                     |
+|   | `agentops_redis`       |                             ▼                              |
+|   | Image: redis:7.2.6     |                +─────────────────────────+                 |
+|   +────────────────────────+                | Container:              |                 |
+|                                             | `agentops_n8n`          |                 |
+|                                             | Image: n8n:1.70.0       |                 |
+|                                             | User: node (1000)       |                 |
+|                                             +─────────────────────────+                 |
+|   +────────────────────────+                                                            |
+|   | (Optional)             |                                                            |
+|   | `agentops_ollama`      | (Profile: 'ollama')                                        |
+|   | Image: ollama:0.4.4    |                                                            |
+|   +────────────────────────+                                                            |
++─────────────────────────────────────────────────────────────────────────────────────────+
 ```
 
-### Pinned Service Specifications
+### Complete Service Specifications
 
-| Service | Container Name | Image Tag | Default Host Binding | Internal Port | Volume Mount |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **PostgreSQL** | `agentops_postgres` | `postgres:16.4-alpine` | *None* (Unpublished) | `5432` | `postgres_data:/var/lib/postgresql/data` |
-| **Redis** | `agentops_redis` | `redis:7.2.6-alpine` | *None* (Unpublished) | `6379` | `redis_data:/data` |
-| **n8n Community** | `agentops_n8n` | `n8nio/n8n:1.70.0` | `127.0.0.1:5678` (Loopback) | `5678` | `n8n_data:/home/node/.n8n` |
-
-Application workloads (`backend-api`, `backend-worker`, `frontend`) are grouped under Docker Compose profile `app`. During infrastructure bootstrap, only the persistent data tier (`postgres`, `redis`, `n8n`) is started.
+| Service | Container Name | Image Specification | Default Host Port | Internal Port | Memory Limit | CPU Limit | Persistence Volume |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **PostgreSQL** | `agentops_postgres` | `postgres:16.4-alpine` | *Unpublished* | `5432` | 512 MB | 1.0 CPU | `postgres_data:/var/lib/postgresql/data` |
+| **Redis** | `agentops_redis` | `redis:7.2.6-alpine` | *Unpublished* | `6379` | 256 MB | 0.5 CPU | `redis_data:/data` |
+| **Backend API** | `agentops_api` | `agentops-backend:latest` (built) | `127.0.0.1:8000` | `8000` | 512 MB | 1.0 CPU | *None (Stateless)* |
+| **Backend Worker** | `agentops_worker` | `agentops-backend:latest` (reused)| *Unpublished* | *None* | 768 MB | 1.5 CPU | *None (Stateless)* |
+| **Frontend** | `agentops_frontend` | `agentops-frontend:latest` (built)| `127.0.0.1:3000` | `3000` | 512 MB | 1.0 CPU | *None (Stateless)* |
+| **n8n Community** | `agentops_n8n` | `n8nio/n8n:1.70.0` | `127.0.0.1:5678` | `5678` | 512 MB | 1.0 CPU | `n8n_data:/home/node/.n8n` |
+| *(Optional) Ollama* | `agentops_ollama` | `ollama/ollama:0.4.4` (profile) | `127.0.0.1:11434`| `11434`| 4096 MB | 4.0 CPU | `ollama_data:/root/.ollama` |
 
 ---
 
 ## 2. Security & Port Isolation Principles
 
-### Unpublished Internal Ports by Default
-In accordance with production-grade security standards and multi-tenant host isolation:
-1. **Zero Host Exposure for Databases**: PostgreSQL (`5432`) and Redis (`6379`) do **not** publish ports to the host machine in base `compose.yaml`. They are only accessible to containers attached to `agentops-net`.
-2. **Strict Loopback Binding**: Developer-facing HTTP interfaces (such as n8n on port `5678`, and eventually API `8000` / Web `3000`) bind strictly to `127.0.0.1`. They never bind to `0.0.0.0` or external network adapters.
-3. **Workspace Port Reservations**: Per workspace guidelines (`AGENTS.md`), the following ports are strictly reserved for sibling projects and **must never be bound or killed**:
-   - `8080`, `5433`, `6380`, `6333`.
+### 1. Loopback-Only Host Bindings
+- All published container ports strictly bind to `127.0.0.1` (`127.0.0.1:8000:8000`, `127.0.0.1:3000:3000`, `127.0.0.1:5678:5678`).
+- **Zero Public Exposure**: Containers are never bound to `0.0.0.0` or public interface adapters, preventing unintended intranet or internet exposure.
 
-### Optional Host Port Publishing (For Host-Native Python Development)
-When developers run Python test suites, Alembic migrations, or worker scripts directly on the host machine outside Docker, host access to PostgreSQL (`5432`) and Redis (`6379`) is required.
+### 2. Unpublished Databases by Default
+- In `compose.yaml`, PostgreSQL (`5432`) and Redis (`6379`) specify `expose` only and do not publish host ports.
+- Containers on `agentops-net` reach them via internal DNS names (`postgres:5432`, `redis:6379`).
 
-To enable host ports cleanly without altering tracked git files:
+### 3. Optional Host Port Publishing (`compose.override.yaml`)
+For local host development (e.g. running pytest or Alembic on the host against containerized PostgreSQL/Redis):
 ```bash
 cp compose.override.yaml.example compose.override.yaml
 docker compose -p agentops up -d
 ```
-Docker Compose automatically merges `compose.override.yaml` (which is ignored by `.gitignore`) and binds `127.0.0.1:5432` and `127.0.0.1:6379`.
+Docker Compose automatically merges `compose.override.yaml` (ignored by `.gitignore`) and binds `127.0.0.1:5432` and `127.0.0.1:6379`.
+
+### 4. Forbidden Workspace Ports
+Per workspace isolation rules (`AGENTS.md`), the following ports are reserved for sibling workspaces and are strictly forbidden:
+- `8080`, `5433`, `6380`, `6333`.
+
+### 5. Unprivileged Non-Root Containers
+- `agentops_api` & `agentops_worker`: Run as dedicated unprivileged user `appuser` (UID `10001`, GID `10001`).
+- `agentops_frontend`: Runs as dedicated unprivileged user `nextjs` (UID `1001`, GID `1001`).
+- `agentops_n8n`: Runs as unprivileged user `node` (UID `1000`, GID `1000`).
 
 ---
 
-## 3. PostgreSQL Multi-Database Initialization
+## 3. Image Strategy & Entrypoints
 
-AgentOps enforces strict database-level separation of duties between the core application engine and third-party orchestration workflows.
+### Backend Image Reuse
+Both `backend-api` and `backend-worker` share the identical multi-stage Dockerfile (`infra/docker/backend.Dockerfile`) and image tag (`agentops-backend:latest`). This avoids building two separate Python images and guarantees identical runtime dependency versions.
 
-### Credential Separation Matrix
-
-| Role | Default Username | Target Database | Privileges & Ownership |
-| :--- | :--- | :--- | :--- |
-| **Superuser** | `postgres_admin` | `postgres` | Cluster administration, role creation, init execution. |
-| **AgentOps App** | `agentops_user` | `agentops_db` | Full schema and DDL ownership of `agentops_db`. Zero access to `n8n_db`. |
-| **n8n Automation** | `n8n_user` | `n8n_db` | Full schema and DDL ownership of `n8n_db`. Zero access to `agentops_db`. |
-
-### Initialization Script: `infra/postgres/init-databases.sh`
-The script is mounted read-only into `/docker-entrypoint-initdb.d/init-databases.sh`.
-- **First-Boot Execution**: The official PostgreSQL container executes all executable scripts in `/docker-entrypoint-initdb.d/` only when `postgres_data` is empty.
-- **Idempotency**: All role and database creations use `IF NOT EXISTS` guards.
-- **PostgreSQL 16 Permissions**: Starting in PostgreSQL 15+, the public schema permissions are revoked from `public`. The script explicitly grants `CREATE` and reassigns schema ownership to the target role:
-  ```sql
-  GRANT ALL ON SCHEMA public TO agentops_user;
-  ALTER SCHEMA public OWNER TO agentops_user;
+Service differentiation is achieved through explicit service-specific commands:
+- **`backend-api`**:
+  ```bash
+  sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
   ```
+  Automatically applies any pending schema migrations to `agentops_db` before binding the Uvicorn ASGI server.
+- **`backend-worker`**:
+  ```bash
+  celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+  ```
+  Consumes asynchronous tasks from Redis queue `1` and writes results to queue `2`.
+
+### Frontend Standalone Build
+`infra/docker/frontend.Dockerfile` utilizes Next.js 14 Standalone output (`output: 'standalone'` in `apps/web/next.config.mjs`). The runner stage copies only `.next/standalone`, `.next/static`, and `public`, producing a lean, production-optimized container running with Node.js without requiring full development `node_modules`.
 
 ---
 
-## 4. n8n Community Edition Configuration & Licensing
+## 4. Healthchecks & Startup Dependency Graph
 
-### Licensing Boundary
-- **License**: n8n Community Edition is distributed under the **Sustainable Use License** (Fair-code).
-- **Permitted Use**: You are free to self-host, run, customize, and automate internal business workflows, testing pipelines, and agent notifications within AgentOps without payment.
-- **Commercial Boundary**: You cannot bundle or offer n8n as a commercial managed service or hosted SaaS platform competing with n8n Cloud.
+Services enforce strict readiness dependencies via Docker Compose `condition: service_healthy`:
 
-### Persistent Encryption Key (`N8N_ENCRYPTION_KEY`)
-> [!CRITICAL]
-> n8n encrypts all stored credentials, tokens, and webhooks in `n8n_db` using `N8N_ENCRYPTION_KEY`.
-> If this key is lost or rotated without re-encrypting credentials, all existing n8n workflows will fail to decrypt secrets.
-> 
-> Generate a cryptographically secure key for your `.env`:
-> ```bash
-> openssl rand -hex 32
-> ```
+```
+                 ┌──────────────┐          ┌──────────────┐
+                 │   postgres   │          │    redis     │
+                 └──────┬───────┘          └──────┬───────┘
+                        │ (healthy)               │ (healthy)
+                        ├─────────────────────────┤
+                        │                         │
+                        ▼                         │
+               ┌────────────────┐                 │
+               │  backend-api   │                 │
+               └────────┬───────┘                 │
+                        │ (healthy)               │
+          ┌─────────────┴─────────────┐           │
+          ▼                           ▼           │
+┌──────────────────┐        ┌──────────────────┐  │
+│     frontend     │        │  backend-worker  │◄─┘
+└──────────────────┘        └──────────────────┘
+```
 
-### Privacy & Resource Settings
-By default, the following flags are disabled in `compose.yaml` to ensure privacy, zero telemetry leakage, and fast startup:
-- `N8N_DIAGNOSTICS_ENABLED=false`
-- `N8N_VERSION_NOTIFICATIONS_ENABLED=false`
-- `N8N_HIRING_BANNER_ENABLED=false`
+1. **`postgres` Healthcheck**:
+   `pg_isready -U postgres_admin -d postgres` (5s interval, 5 retries).
+2. **`redis` Healthcheck**:
+   `redis-cli ping` (5s interval, 5 retries).
+3. **`backend-api` Healthcheck**:
+   `curl -fsS http://127.0.0.1:8000/health/ready || exit 1` (probes database and cache connectivity).
+4. **`backend-worker` Healthcheck**:
+   `python -c "import redis; r = redis.Redis.from_url('redis://redis:6379/1'); r.ping()"` (15s interval).
+5. **`frontend` Healthcheck**:
+   `wget --no-verbose --tries=1 --spider http://127.0.0.1:3000 || exit 1` (10s interval).
+6. **`n8n` Healthcheck**:
+   `wget --no-verbose --tries=1 --spider http://127.0.0.1:5678/healthz || exit 1` (10s interval).
 
 ---
 
-## 5. Operational Commands & Lifecycle
+## 5. Model Providers: Deterministic Demo vs. External Real Providers
+
+### Deterministic Demo Mode (Zero Paid APIs)
+By default, AgentOps is configured for deterministic local evaluation without paid API keys:
+- `LLM_PROVIDER=mock`
+- `SEARCH_PROVIDER=mock`
+- `MOCK_DETERMINISTIC_SEED=42`
+
+In this mode, all 6 services execute end-to-end research runs, DAG planning, tool sandboxes, evidence collection, and report generation 100% offline.
+
+### Optional Ollama Integration
+1. **Host-Native Ollama (Default)**:
+   Containers map `host.docker.internal:host-gateway`. When running Ollama on your host workstation, point `OLLAMA_BASE_URL=http://host.docker.internal:11434`.
+2. **Containerized Ollama Profile**:
+   To run Ollama inside Docker Compose:
+   ```bash
+   docker compose -p agentops --profile ollama up -d
+   ```
+
+### No Silent Fallback Guarantee
+If a user requests `LLM_PROVIDER=openai` without configuring `OPENAI_API_KEY`:
+- The provider factory raises an explicit `AuthenticationError`.
+- The system **never silently falls back to Mock mode** when a real provider was requested.
+- Every run and audit event clearly records the chosen provider (`mock`, `openai`, or `ollama`).
+
+---
+
+## 6. Operational Commands & Lifecycle
 
 All operations use the explicit project identifier `-p agentops`.
 
@@ -137,10 +202,10 @@ cp .env.example .env
 docker compose -p agentops config
 ```
 
-### Starting the Infrastructure Services
+### Starting the Full Stack
 ```bash
-# Starts postgres, redis, and n8n in the background
-docker compose -p agentops up -d
+# Build and start all 6 cooperating services
+docker compose -p agentops up -d --build
 ```
 
 ### Inspecting Service Health
@@ -149,88 +214,70 @@ docker compose -p agentops ps
 ```
 Expected output:
 ```
-NAME                IMAGE                  COMMAND                  SERVICE    STATUS
-agentops_postgres   postgres:16.4-alpine   "docker-entrypoint.s…"   postgres   Up (healthy)
-agentops_redis      redis:7.2.6-alpine     "docker-entrypoint.s…"   redis      Up (healthy)
-agentops_n8n        n8nio/n8n:1.70.0       "tini -- /docker-ent…"   n8n        Up (healthy)
-```
-
-### Monitoring Logs
-```bash
-# Follow logs for all infrastructure services
-docker compose -p agentops logs -f
-
-# Follow logs for specific service
-docker compose -p agentops logs -f postgres
-docker compose -p agentops logs -f n8n
+NAME                IMAGE                     COMMAND                  SERVICE          STATUS
+agentops_api        agentops-backend:latest   "sh -c 'alembic upgr…"   backend-api      Up (healthy)
+agentops_frontend   agentops-frontend:latest  "node server.js"         frontend         Up (healthy)
+agentops_n8n        n8nio/n8n:1.70.0          "tini -- /docker-ent…"   n8n              Up (healthy)
+agentops_postgres   postgres:16.4-alpine      "docker-entrypoint.s…"   postgres         Up (healthy)
+agentops_redis      redis:7.2.6-alpine        "docker-entrypoint.s…"   redis            Up (healthy)
+agentops_worker     agentops-backend:latest   "celery -A app.worke…"   backend-worker   Up (healthy)
 ```
 
 ### Graceful Shutdown (Non-Destructive)
 ```bash
-# Stop containers without removing network or volumes
+# Stop containers without removing networks or volumes
 docker compose -p agentops stop
 
 # Or stop and remove containers while preserving persistent volumes
 docker compose -p agentops down
 ```
-> [!NOTE]
-> `docker compose down` preserves all named volumes (`postgres_data`, `redis_data`, `n8n_data`). Your database tables and n8n workflows remain completely intact.
+> [!IMPORTANT]
+> `docker compose down` retains named volumes (`postgres_data`, `redis_data`, `n8n_data`). Database tables and n8n credentials remain completely intact across restarts.
 
 ---
 
-## 6. Healthchecks & Diagnostics
+## 7. Database Migrations & Safe Reset Procedures
 
-### PostgreSQL Healthcheck
-- Probe: `pg_isready -U postgres_admin -d postgres`
-- Interval: 5s, Timeout: 5s, Retries: 5.
-- Manual test inside container:
-  ```bash
-  docker compose -p agentops exec postgres pg_isready -U postgres_admin
-  ```
+### Applying Pending Migrations
+Migrations run automatically on `backend-api` startup. To manually execute migrations:
+```bash
+docker compose -p agentops exec backend-api alembic upgrade head
+```
 
-### Redis Healthcheck
-- Probe: `redis-cli ping` (Expects `PONG`)
-- Interval: 5s, Timeout: 3s, Retries: 5.
-- Manual test inside container:
-  ```bash
-  docker compose -p agentops exec redis redis-cli ping
-  ```
+### Safe Database Reset (Data Reset without Volume Loss)
+To safely reset application tables without wiping n8n workflows:
+```bash
+docker compose -p agentops exec backend-api python -c "
+import asyncio
+from app.db.base import Base
+from app.db.session import async_engine
 
-### n8n Community Healthcheck
-- Probe: `wget --no-verbose --tries=1 --spider http://127.0.0.1:5678/healthz || exit 1`
-- Interval: 10s, Timeout: 5s, Retries: 5, Start period: 20s.
-- Manual test from host:
-  ```bash
-  curl -fsS http://127.0.0.1:5678/healthz
-  ```
-  Expected HTTP response: `{"status":"ok"}`
+async def reset():
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+asyncio.run(reset())
+"
+docker compose -p agentops exec backend-api alembic stamp head
+```
+
+### Full Volume Reset (Destructive)
+To completely recreate clean databases from scratch:
+```bash
+docker compose -p agentops down -v
+docker compose -p agentops up -d
+```
+> [!CAUTION]
+> `docker compose down -v` permanently destroys all stored research runs, audit trails, and n8n credentials.
 
 ---
 
-## 7. Troubleshooting & Recovery
+## 8. Host-Specific Checks & Environment Status
 
-### Issue: Multi-Database Init Script Did Not Run
-- **Symptom**: `agentops_db` or `n8n_db` does not exist; only default `postgres` exists.
-- **Cause**: The PostgreSQL Docker entrypoint script only runs `/docker-entrypoint-initdb.d/` on an **empty** data directory. If `postgres_data` was initialized before the script was mounted, it skipped execution.
-- **Resolution**:
-  1. If existing data is unneeded:
-     ```bash
-     docker compose -p agentops down -v
-     docker compose -p agentops up -d
-     ```
-  2. If preserving existing data, manually run the script via `exec`:
-     ```bash
-     docker compose -p agentops exec -T postgres sh /docker-entrypoint-initdb.d/init-databases.sh
-     ```
-
-### Issue: Port 5678 Already In Use on Host
-- **Symptom**: `Bind for 127.0.0.1:5678 failed: port is already allocated`.
-- **Diagnostic**: Check what process is listening on port 5678:
-  ```bash
-  lsof -i :5678
-  ```
-- **Rule Enforcement**: Never run `killall` or `pkill`. Identify the specific PID and terminate only the conflicting process.
-
-### Destructive Command Safety Policy
-- **Never Run**: `docker system prune -a` or `docker volume prune -f`.
-- **Destructive Volume Wipe**: Wiping volumes (`docker compose down -v`) destroys all runs, state, and credentials. Always follow the procedures in [`docs/runbooks/backup-and-restore.md`](file:///Users/macbook/Downloads/Github_repo/agentops/docs/runbooks/backup-and-restore.md) before resetting volumes.
+| Check / Verification | Execution Method | Result | Notes |
+| :--- | :--- | :--- | :--- |
+| **Compose Schema Validation** | `docker compose -p agentops config` | **PASSED** | Syntax, resource limits, dependencies, and networks validated. |
+| **Ollama Profile Schema** | `docker compose -p agentops --profile ollama config` | **PASSED** | Optional model container schema validated. |
+| **Acceptance Test Suite** | `pytest test_compose_and_local_environment.py` | **PASSED (19/19)** | Port isolation, healthchecks, image reuse, persistence, and error handling verified. |
+| **Frontend Standalone Build** | `npm --prefix apps/web run build` | **PASSED** | Standalone bundle and server.js verified. |
+| **Live Docker Daemon Execution** | `docker ps` | *Host-Specific* | Requires Docker Desktop to be launched on macOS workstation (`open -a Docker`). |

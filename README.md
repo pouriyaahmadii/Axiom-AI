@@ -9,12 +9,11 @@
 
 ## Project Status
 
-**Current Phase**: **Phase 9: Backend API Foundation** (In Development)
+**Current Phase**: **Phase 22: Local Docker Compose Environment Finalized** (Complete)
 
-AgentOps is an engineering portfolio project under active development. It demonstrates production-grade AI systems engineering, deterministic orchestration, security boundaries, and observable operations.
+AgentOps is an engineering portfolio project demonstrating production-grade AI systems engineering, deterministic orchestration, security boundaries, and observable operations.
 
-- **Current Implementation State**: Baseline architecture, security primitives, repository scaffold, dependency & runtime compatibility matrices, strict code quality conventions (Ruff, Mypy strict, Pytest), multi-database PostgreSQL initialization, Redis, n8n Community, Docker Compose topology, 10 core SQLAlchemy 2.0 domain models, initial Alembic versioned migration, versioned REST API (`/api/v1/runs`, `/api/v1/approvals`), health probes (`/health/live`, `/health/ready`), correlation ID middleware, strict Pydantic v2 schemas, unified error envelope, and comprehensive integration tests are established.
-- **Application Business Logic**: Planned for subsequent phases (Phase 10+). Agent orchestration runtime, guarded tool sandbox, and provider integrations follow.
+- **Current Implementation State**: Fully functioning, end-to-end local Docker Compose environment unifying Next.js frontend, FastAPI backend API, Celery worker, PostgreSQL 16, Redis 7, and n8n Community. Includes LangGraph agent orchestration with deterministic mock mode, guarded tool sandboxing, traceable evidence collection, human-in-the-loop approvals, n8n notifications, OpenTelemetry observability, comprehensive test suites, and strict performance and capacity controls.
 
 ---
 
@@ -130,17 +129,34 @@ make test
 make validate
 ```
 
-### 3. Start Local Infrastructure Services
+### 3. Start Complete Local Docker Compose Environment
 
 ```bash
-# Verify Docker Compose topology and environment variables
+# Validate Docker Compose configuration and service dependency graph
 docker compose -p agentops config
 
-# Start PostgreSQL, Redis, and n8n Community in background
-docker compose -p agentops up -d
+# Build and start all 6 cooperating services (Next.js, FastAPI, Celery, PostgreSQL, Redis, n8n)
+docker compose -p agentops up -d --build
 
-# Inspect healthchecks and container status
+# Inspect service health and readiness
 docker compose -p agentops ps
+
+# Web Dashboard: http://127.0.0.1:3000
+# Backend OpenAPI / Swagger: http://127.0.0.1:8000/docs
+# n8n Automation Console: http://127.0.0.1:5678
+```
+
+### 4. Non-Destructive Shutdown and Reset
+
+```bash
+# Stop containers while preserving persistent database and n8n volumes
+docker compose -p agentops stop
+
+# Or teardown containers while keeping named volumes intact
+docker compose -p agentops down
+
+# (Optional) Full volume wipe and clean recreation
+docker compose -p agentops down -v
 ```
 
 ---

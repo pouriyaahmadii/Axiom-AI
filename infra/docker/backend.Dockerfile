@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Runtime Stage
 FROM python:3.10.15-slim-bookworm AS runner
 
-WORKDIR /app
+WORKDIR /app/services/backend
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
@@ -32,6 +32,8 @@ RUN groupadd -g 10001 appuser && \
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY services/backend/ /app/services/backend/
+
+RUN chown -R appuser:appuser /app
 
 ENV PYTHONPATH="/app/services/backend"
 ENV PYTHONUNBUFFERED=1
