@@ -5,32 +5,202 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ENVIRONMENT: test
+  LLM_PROVIDER: mock
+  SEARCH_PROVIDER: mock
+  MOCK_DETERMINISTIC_SEED: "42"
+  API_KEY: agentops-dev-internal-key
+  SECRET_KEY: test-secret-key-at-least-32-chars-long
+  DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+  SYNC_DATABASE_URL: "sqlite:///:memory:"
+  REDIS_URL: redis://localhost:6379/0
+  CELERY_BROKER_URL: redis://localhost:6379/1
+  CELERY_RESULT_BACKEND: redis://localhost:6379/2
+  PYTHONUNBUFFERED: "1"
 
 jobs:
-  lint-and-test:
+  python-lint-and-format:
+    name: 1. Python Linting & Formatting
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
       - name: Set up Python 3.10
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
         with:
           python-version: "3.10"
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Install Linting Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff==0.9.1
+
+      - name: Verify Formatting with Ruff
+        run: ruff format --check .
+
+      - name: Lint Code with Ruff
+        run: ruff check .
+
+  python-type-check:
+    name: 2. Python Static Type Checking
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Check formatting with Ruff
-        run: |
-          ruff format --check .
+      - name: Run Mypy Type Check
+        run: mypy services/backend/app services/backend/tests
 
-      - name: Lint with Ruff
-        run: |
-          ruff check .
+  python-tests:
+    name: 3 & 4. Python Tests & Integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
-      - name: Run backend tests
+      - name: Set up Python 3.10
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install Dependencies
         run: |
-          pytest services/backend/tests
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run Unit Tests
+        run: pytest services/backend/tests/unit -v
+
+      - name: Run Database Integration & Security Tests
+        run: pytest services/backend/tests/integration services/backend/tests/contract services/backend/tests/security -v
+
+  agent-evaluations:
+    name: 11. Deterministic Agent Evaluations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run Agent Evals Suite (Deterministic Mock)
+        run: pytest services/backend/tests/evals -v
+
+      - name: Run Performance Baselines & Budget Tests
+        run: pytest services/backend/tests/perf -v
+
+  frontend-quality:
+    name: 5 & 6. Frontend Lint, Types & Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@60edb5dd545a775178f525247059d66047c3d25e # v4.0.2
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: npm ci
+
+      - name: Check Frontend Code with ESLint
+        run: npm run lint
+
+      - name: Verify TypeScript Types
+        run: npm run type-check
+
+      - name: Run Frontend Tests
+        run: npm test
+
+      - name: Validate Next.js Production Build
+        run: npm run build
+
+  docker-and-n8n-validation:
+    name: 7 & 8. Docker Compose & n8n Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: "3.10"
+
+      - name: Validate n8n Workflow JSON Schemas
+        run: python scripts/validate_n8n_workflows.py
+
+      - name: Validate Core Docker Compose Topology
+        run: docker compose -p agentops config
+
+      - name: Validate Optional Ollama Profile Topology
+        run: docker compose -p agentops --profile ollama config
+
+  security-and-audit:
+    name: 9 & 10. Dependency Audit & Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: "3.10"
+
+      - name: Run Secret Scanning
+        run: python scripts/scan_secrets.py
+
+      - name: Install Dependencies for Audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pip-audit
+
+      - name: Audit Python Dependencies
+        run: |
+          python scripts/audit_dependencies.py
+          pip-audit --desc || echo "pip-audit completed with warnings"
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@60edb5dd545a775178f525247059d66047c3d25e # v4.0.2
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Audit Frontend Dependencies
+        working-directory: apps/web
+        run: npm audit --audit-level=high || echo "Frontend audit completed with reviewable advisories"

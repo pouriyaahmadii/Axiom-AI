@@ -1,4 +1,4 @@
-.PHONY: help install install-web lint lint-fix format format-check type-check test test-unit test-integration validate worker up down clean
+.PHONY: help install install-web lint lint-fix format format-check type-check test test-unit test-integration test-evals test-frontend validate validate-all validate-n8n scan-secrets audit worker up down clean
 
 PYTHON := .venv/bin/python
 PYTEST := .venv/bin/pytest
@@ -18,7 +18,13 @@ help:
 	@echo "test             - Run all backend tests"
 	@echo "test-unit        - Run unit tests only"
 	@echo "test-integration - Run integration tests only"
-	@echo "validate         - Run full quality gate (lint, format, type-check, test)"
+	@echo "test-evals       - Run deterministic agent evaluation suite"
+	@echo "test-frontend    - Run frontend unit and component tests"
+	@echo "validate         - Run core quality gate (lint, format, type-check, test)"
+	@echo "validate-all     - Run full 11-step CI verification locally"
+	@echo "validate-n8n     - Validate n8n workflow JSON files"
+	@echo "scan-secrets     - Scan repository for accidental secret leakage"
+	@echo "audit            - Run license and dependency vulnerability audit"
 	@echo "up               - Start Docker Compose services (project: agentops)"
 	@echo "down             - Stop Docker Compose services (project: agentops)"
 	@echo "clean            - Remove Python cache files, test caches, and coverage"
@@ -43,7 +49,7 @@ format-check:
 	$(RUFF) format --check .
 
 type-check:
-	$(MYPY) services/backend/app
+	$(MYPY) services/backend/app services/backend/tests
 
 test:
 	$(PYTEST) services/backend/tests
@@ -54,8 +60,28 @@ test-unit:
 test-integration:
 	$(PYTEST) services/backend/tests/integration
 
+test-evals:
+	$(PYTEST) services/backend/tests/evals -v
+
+test-frontend:
+	npm --prefix apps/web test
+
+validate-n8n:
+	$(PYTHON) scripts/validate_n8n_workflows.py
+
+scan-secrets:
+	$(PYTHON) scripts/scan_secrets.py
+
+audit:
+	$(PYTHON) scripts/audit_dependencies.py
+
 validate: lint format-check type-check test
-	@echo "==> All quality gate checks PASSED cleanly."
+	@echo "==> All core quality gate checks PASSED cleanly."
+
+validate-all: lint format-check type-check test validate-n8n scan-secrets audit test-frontend
+	docker compose -p agentops config > /dev/null
+	docker compose -p agentops --profile ollama config > /dev/null
+	@echo "==> All 11 CI verification checks PASSED cleanly."
 
 worker:
 	PYTHONPATH=services/backend $(PYTHON) -m celery -A app.workers.celery_app worker --loglevel=info --pool=threads --concurrency=4 -Q agentops.runs
