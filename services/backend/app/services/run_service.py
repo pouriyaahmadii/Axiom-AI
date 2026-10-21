@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -98,9 +99,23 @@ async def create_run(
     )
     session.add(outbox_event)
 
-    await session.flush()
-    await session.refresh(run)
-    return run, True
+    try:
+        await session.flush()
+        await session.refresh(run)
+        return run, True
+    except IntegrityError as err:
+        if request.idempotency_key:
+            await session.rollback()
+            stmt = select(Run).where(Run.idempotency_key == request.idempotency_key)
+            result = await session.execute(stmt)
+            existing_run = result.scalar_one_or_none()
+            if existing_run:
+                if existing_run.objective != request.objective:
+                    raise ConflictError(
+                        f"Idempotency key '{request.idempotency_key}' was previously used for a different objective."
+                    ) from err
+                return existing_run, False
+        raise
 
 
 async def list_runs(

@@ -281,8 +281,15 @@ class SafeHttpClient:
         self.max_bytes = max_bytes
         self.max_redirects = max_redirects
 
-    def fetch_url(self, url: str) -> dict[str, Any]:
+    def fetch_url(self, url: str, use_cache: bool = True) -> dict[str, Any]:
         """Safely fetch web document following redirects manually and validating each hop."""
+        if use_cache:
+            from app.tools.cache import get_document_cache
+
+            cached_entry = get_document_cache().get(url)
+            if cached_entry is not None:
+                return cached_entry
+
         current_url = url
         redirect_history: list[str] = []
 
@@ -305,7 +312,7 @@ class SafeHttpClient:
                         "and operational SLAs. Full mock test verification content."
                     ),
                 )
-                return {
+                res = {
                     "url": current_url,
                     "final_url": current_url,
                     "status_code": 200,
@@ -314,6 +321,11 @@ class SafeHttpClient:
                     "byte_count": len(content),
                     "redirect_chain": redirect_history,
                 }
+                if use_cache:
+                    from app.tools.cache import get_document_cache
+
+                    get_document_cache().set(url, res)
+                return res
 
             # Live HTTP Request with manual redirect handling
             timeout = httpx.Timeout(self.total_timeout, connect=self.connect_timeout)
@@ -359,7 +371,7 @@ class SafeHttpClient:
                 content_bytes = response.content[: self.max_bytes]
                 raw_text = content_bytes.decode("utf-8", errors="replace")
 
-                return {
+                res = {
                     "url": url,
                     "final_url": current_url,
                     "status_code": response.status_code,
@@ -368,6 +380,11 @@ class SafeHttpClient:
                     "byte_count": len(content_bytes),
                     "redirect_chain": redirect_history,
                 }
+                if use_cache:
+                    from app.tools.cache import get_document_cache
+
+                    get_document_cache().set(url, res)
+                return res
 
         raise SecurityValidationError(f"Redirect limit exceeded ({self.max_redirects} hops)")
 

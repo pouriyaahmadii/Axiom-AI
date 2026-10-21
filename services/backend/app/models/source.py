@@ -89,6 +89,7 @@ class Source(Base, CreatedAtMixin):
     __table_args__ = (
         UniqueConstraint("run_id", "url", name="uq_sources_run_url"),
         Index("idx_sources_run_domain", "run_id", "domain"),
+        Index("idx_sources_run_hash", "run_id", "content_hash"),
     )
 
     def __repr__(self) -> str:

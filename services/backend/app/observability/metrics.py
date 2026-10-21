@@ -283,3 +283,6 @@ metrics = MetricsRegistry()
 def get_metrics() -> MetricsRegistry:
     """Retrieve global MetricsRegistry singleton."""
     return metrics
+
+
+get_metrics_registry = get_metrics

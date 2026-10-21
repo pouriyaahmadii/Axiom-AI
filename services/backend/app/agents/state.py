@@ -37,13 +37,22 @@ class AgentState(TypedDict, total=False):
     # 7. Evidence references
     evidence_items: list[dict[str, Any]]
 
-    # 8. Budget counters & resource bounds
+    # 8. Budget counters & resource bounds (Phase 21: Capacity and Cost Controls)
     steps_executed: int
     max_steps: int
     cost_usd: float
     budget_limit_usd: float
     plan_repair_attempts: int
     max_plan_repairs: int
+    tokens_consumed: int
+    max_tokens: int
+    search_requests_count: int
+    max_search_requests: int
+    bytes_fetched: int
+    max_fetched_bytes: int
+    evidence_records_count: int
+    max_evidence_records: int
+    max_report_payload_bytes: int
 
     # 9. Error summaries
     errors: list[str]

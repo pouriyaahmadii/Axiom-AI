@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     )
     TAVILY_API_KEY: str | None = Field(default=None, description="Optional Tavily API key")
 
-    # Safety Bounds & Execution Limits
+    # Safety Bounds & Execution Limits (Phase 21: Performance, Capacity, and Cost Controls)
     MAX_PLAN_STEPS: int = Field(
         default=10, ge=1, le=50, description="Maximum allowable steps in an execution plan"
     )
@@ -107,6 +107,51 @@ class Settings(BaseSettings):
     REQUIRE_REPORT_APPROVAL: bool = Field(
         default=False,
         description="Require human approval for completed reports before finalization",
+    )
+    MAX_CONCURRENT_TASKS: int = Field(
+        default=10, ge=1, le=100, description="Maximum concurrent tasks across active runs"
+    )
+    CELERY_WORKER_CONCURRENCY: int = Field(
+        default=4, ge=1, le=32, description="Celery worker concurrency limit"
+    )
+    MAX_LLM_ATTEMPTS: int = Field(
+        default=3, ge=1, le=10, description="Maximum LLM call attempts per step"
+    )
+    MAX_PLAN_REPAIR_ATTEMPTS: int = Field(
+        default=2, ge=0, le=5, description="Maximum automated plan repair attempts"
+    )
+    MAX_TOKENS_PER_RUN: int = Field(
+        default=50_000, ge=1000, le=1_000_000, description="Hard token consumption ceiling per run"
+    )
+    MAX_SEARCH_REQUESTS_PER_RUN: int = Field(
+        default=10, ge=1, le=100, description="Maximum public search requests permitted per run"
+    )
+    MAX_FETCHED_BYTES_PER_PAGE: int = Field(
+        default=1_048_576,
+        ge=10_000,
+        le=10_000_000,
+        description="Maximum bytes fetched per page (1MB)",
+    )
+    MAX_FETCHED_BYTES_PER_RUN: int = Field(
+        default=5_242_880,
+        ge=50_000,
+        le=50_000_000,
+        description="Cumulative fetch bandwidth limit per run (5MB)",
+    )
+    MAX_EVIDENCE_RECORDS_PER_RUN: int = Field(
+        default=50, ge=1, le=500, description="Maximum evidence records retained per run"
+    )
+    MAX_REPORT_PAYLOAD_BYTES: int = Field(
+        default=524_288,
+        ge=10_000,
+        le=5_000_000,
+        description="Maximum report markdown payload size in bytes",
+    )
+    HTTP_CACHE_TTL_SECONDS: int = Field(
+        default=3600, ge=60, le=86400, description="TTL in seconds for document caching"
+    )
+    HTTP_CACHE_MAX_ENTRIES: int = Field(
+        default=500, ge=10, le=10_000, description="Maximum entries in in-memory document cache"
     )
 
     # Observability & Logging

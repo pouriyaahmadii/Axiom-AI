@@ -49,5 +49,15 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
             span.set_attribute("http.status_code", response.status_code)
             span.set_attribute("http.duration_ms", round(duration_ms, 2))
 
+            # Record API request latency metrics (Phase 21: Performance Baselines)
+            from app.observability.metrics import get_metrics
+
+            get_metrics().observe_histogram(
+                "api_request_duration_seconds",
+                duration_ms / 1000.0,
+                {"method": request.method, "status": str(response.status_code)},
+            )
+
         response.headers["X-Correlation-ID"] = correlation_id
+        response.headers["X-Response-Time-Ms"] = f"{duration_ms:.2f}"
         return response

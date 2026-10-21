@@ -69,6 +69,12 @@ def validate_request_node(state: AgentState) -> dict[str, Any]:
 
     max_steps = state.get("max_steps") or settings.MAX_PLAN_STEPS
     budget_limit = state.get("budget_limit_usd") or settings.BUDGET_USD_LIMIT
+    max_tokens = state.get("max_tokens") or settings.MAX_TOKENS_PER_RUN
+    max_search_requests = state.get("max_search_requests") or settings.MAX_SEARCH_REQUESTS_PER_RUN
+    max_fetched_bytes = state.get("max_fetched_bytes") or settings.MAX_FETCHED_BYTES_PER_RUN
+    max_evidence_records = (
+        state.get("max_evidence_records") or settings.MAX_EVIDENCE_RECORDS_PER_RUN
+    )
 
     logger.info("request_validated", objective=objective[:50], domain=domain, max_steps=max_steps)
     return {
@@ -78,6 +84,14 @@ def validate_request_node(state: AgentState) -> dict[str, Any]:
         "max_steps": max_steps,
         "cost_usd": 0.0,
         "budget_limit_usd": float(budget_limit),
+        "tokens_consumed": 0,
+        "max_tokens": max_tokens,
+        "search_requests_count": 0,
+        "max_search_requests": max_search_requests,
+        "bytes_fetched": 0,
+        "max_fetched_bytes": max_fetched_bytes,
+        "evidence_records_count": 0,
+        "max_evidence_records": max_evidence_records,
         "plan_repair_attempts": 0,
         "max_plan_repairs": 2,
         "step_results": {},
@@ -120,18 +134,21 @@ def generate_plan_node(state: AgentState) -> dict[str, Any]:
 
     plan_steps = [s.model_dump() for s in res.data.steps]
     new_cost = state.get("cost_usd", 0.0) + float(res.usage.cost_usd)
+    new_tokens = state.get("tokens_consumed", 0) + res.usage.total_tokens
 
     logger.info(
         "plan_generated",
         total_steps=len(plan_steps),
         provider=res.provider,
         cost_usd=new_cost,
+        tokens=new_tokens,
     )
     return {
         "plan": plan_steps,
         "plan_rationale": res.data.rationale,
         "total_steps": len(plan_steps),
         "cost_usd": new_cost,
+        "tokens_consumed": new_tokens,
     }
 
 
@@ -291,6 +308,8 @@ def execute_task_node(state: AgentState) -> dict[str, Any]:
     max_steps = state.get("max_steps", settings.MAX_PLAN_STEPS)
     cost_usd = state.get("cost_usd", 0.0)
     budget_limit = state.get("budget_limit_usd", settings.BUDGET_USD_LIMIT)
+    tokens_consumed = state.get("tokens_consumed", 0)
+    max_tokens = state.get("max_tokens", settings.MAX_TOKENS_PER_RUN)
 
     # Budget & step boundary checks
     if steps_executed >= max_steps:
@@ -301,6 +320,11 @@ def execute_task_node(state: AgentState) -> dict[str, Any]:
     if cost_usd >= budget_limit:
         return {
             "fatal_error": f"Execution halted: financial budget limit (${budget_limit:.2f}) exceeded.",
+            "status": "FAILED",
+        }
+    if tokens_consumed >= max_tokens:
+        return {
+            "fatal_error": f"Execution halted: token consumption budget ({max_tokens} tokens) exceeded.",
             "status": "FAILED",
         }
 
@@ -349,6 +373,27 @@ def execute_task_node(state: AgentState) -> dict[str, Any]:
         if tool_result.content_hash:
             result["content_hash"] = tool_result.content_hash
 
+        search_requests = state.get("search_requests_count", 0)
+        max_searches = state.get("max_search_requests", settings.MAX_SEARCH_REQUESTS_PER_RUN)
+        if tool_name in ("search_public_web", "web_search"):
+            if search_requests >= max_searches:
+                return {
+                    "fatal_error": f"Execution halted: search request budget ({max_searches}) exceeded.",
+                    "status": "FAILED",
+                }
+            search_requests += 1
+
+        bytes_fetched = state.get("bytes_fetched", 0)
+        max_bytes = state.get("max_fetched_bytes", settings.MAX_FETCHED_BYTES_PER_RUN)
+        if tool_name in ("fetch_approved_public_page", "fetch_document"):
+            added_bytes = int(result.get("byte_count", 0))
+            if (bytes_fetched + added_bytes) > max_bytes:
+                return {
+                    "fatal_error": f"Execution halted: cumulative fetch bandwidth budget ({max_bytes} bytes) exceeded.",
+                    "status": "FAILED",
+                }
+            bytes_fetched += added_bytes
+
         # Track token costs if extract_metrics or LLM was invoked
         if tool_name == "extract_metrics" and "cost_usd" in result:
             cost_usd += float(result.get("cost_usd", 0.0))
@@ -358,6 +403,8 @@ def execute_task_node(state: AgentState) -> dict[str, Any]:
             "steps_executed": steps_executed + 1,
             "step_results": step_results,
             "cost_usd": cost_usd,
+            "search_requests_count": search_requests,
+            "bytes_fetched": bytes_fetched,
         }
 
     except Exception as exc:
@@ -488,6 +535,21 @@ def validate_report_node(state: AgentState) -> dict[str, Any]:
     grounded = report.get("grounded_findings", "")
     inferences = report.get("strategic_inferences", "")
     markdown = report.get("markdown_content", "")
+
+    # Hard payload size check (Phase 21: Payload Bounds)
+    max_payload_bytes: int = int(
+        state.get("max_report_payload_bytes") or settings.MAX_REPORT_PAYLOAD_BYTES
+    )
+    if len(markdown.encode("utf-8")) > max_payload_bytes:
+        logger.error(
+            "report_payload_size_exceeded",
+            size_bytes=len(markdown.encode("utf-8")),
+            limit_bytes=max_payload_bytes,
+        )
+        return {
+            "fatal_error": f"Report validation failed: markdown payload size ({len(markdown.encode('utf-8'))} bytes) exceeds maximum limit of {max_payload_bytes} bytes.",
+            "status": "FAILED",
+        }
 
     errors = list(state.get("errors", []))
     if not grounded or len(grounded.strip()) < 20:

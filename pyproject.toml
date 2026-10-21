@@ -57,6 +57,7 @@ markers = [
     "security: SSRF and security boundary validation tests",
     "e2e: End-to-end replay workflow tests",
     "evals: Repeatable agent evaluation benchmarks and edge cases",
+    "perf: Performance benchmark and capacity stress tests",
 ]
 
 [tool.ruff]
