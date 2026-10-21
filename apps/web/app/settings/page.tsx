@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, Moon, Server, Sun } from "lucide-react";
+import { CheckCircle2, Moon, RefreshCw, Server, Sun } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -12,10 +12,38 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useTheme } from "@/components/layout/theme-provider";
+import {
+  apiClient,
+  type HealthResponse,
+  type SystemInfoResponse,
+} from "@/lib/api-client";
 
 export default function SettingsPage() {
   const { resolvedTheme, toggleTheme } = useTheme();
+
+  const [health, setHealth] = React.useState<HealthResponse | null>(null);
+  const [info, setInfo] = React.useState<SystemInfoResponse | null>(null);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  const fetchDiagnostics = React.useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [h, i] = await Promise.all([
+        apiClient.getHealth().catch(() => null),
+        apiClient.getSystemInfo().catch(() => null),
+      ]);
+      setHealth(h);
+      setInfo(i);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    fetchDiagnostics();
+  }, [fetchDiagnostics]);
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -26,14 +54,20 @@ export default function SettingsPage() {
         ]}
       />
 
-      <div className="pb-2 border-b border-border">
-        <h1 className="text-xl font-bold tracking-tight text-content-primary sm:text-2xl">
-          System Settings & Runtime Bounds
-        </h1>
-        <p className="text-xs text-content-muted sm:text-sm mt-0.5">
-          Inspect operational bounds, execution safeguards, and container
-          infrastructure health.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-2 border-b border-border">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-content-primary sm:text-2xl">
+            System Settings & Runtime Bounds
+          </h1>
+          <p className="text-xs text-content-muted sm:text-sm mt-0.5">
+            Inspect operational bounds, execution safeguards, and container
+            infrastructure health.
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={fetchDiagnostics}>
+          <RefreshCw className="h-3.5 w-3.5 mr-1" />
+          Probe Health
+        </Button>
       </div>
 
       {/* Infrastructure Diagnostics */}
@@ -48,59 +82,76 @@ export default function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-lg border border-border p-3 space-y-1">
-              <span className="text-[10px] uppercase font-bold text-content-muted">
-                API Gateway
-              </span>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold">FastAPI v0.1.0</span>
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              </div>
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
-                127.0.0.1:8000
-              </span>
+          {isLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
             </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="rounded-lg border border-border p-3 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-content-muted">
+                  API Gateway
+                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold">
+                    FastAPI {info?.version || "v0.1.0"}
+                  </span>
+                  <span
+                    className={`h-2 w-2 rounded-full ${health ? "bg-emerald-500" : "bg-amber-500"}`}
+                  />
+                </div>
+                <span className="text-[10px] text-content-muted font-mono">
+                  {health ? "Status: Operational" : "Local Standalone"}
+                </span>
+              </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-1">
-              <span className="text-[10px] uppercase font-bold text-content-muted">
-                Primary Store
-              </span>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold">PostgreSQL 16</span>
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <div className="rounded-lg border border-border p-3 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-content-muted">
+                  Primary Store
+                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold">PostgreSQL 16</span>
+                  <span
+                    className={`h-2 w-2 rounded-full ${health ? "bg-emerald-500" : "bg-blue-500"}`}
+                  />
+                </div>
+                <span className="text-[10px] text-content-muted font-mono">
+                  {health?.database || "Internal Network"}
+                </span>
               </div>
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
-                Internal Network
-              </span>
-            </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-1">
-              <span className="text-[10px] uppercase font-bold text-content-muted">
-                Task Broker
-              </span>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold">Redis 7.2</span>
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <div className="rounded-lg border border-border p-3 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-content-muted">
+                  Task Broker
+                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold">Redis 7.2</span>
+                  <span
+                    className={`h-2 w-2 rounded-full ${health ? "bg-emerald-500" : "bg-blue-500"}`}
+                  />
+                </div>
+                <span className="text-[10px] text-content-muted font-mono">
+                  {health?.redis || "Internal Network"}
+                </span>
               </div>
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
-                Internal Network
-              </span>
-            </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-1">
-              <span className="text-[10px] uppercase font-bold text-content-muted">
-                Orchestrator
-              </span>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold">n8n Community</span>
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <div className="rounded-lg border border-border p-3 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-content-muted">
+                  Edge Orchestrator
+                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold">n8n Community</span>
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                </div>
+                <span className="text-[10px] text-content-muted font-mono">
+                  127.0.0.1:5678
+                </span>
               </div>
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
-                127.0.0.1:5678
-              </span>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 
@@ -125,7 +176,7 @@ export default function SettingsPage() {
               </span>
             </div>
             <code className="font-mono bg-muted px-2 py-1 rounded text-content-primary">
-              10 steps
+              {info?.limits?.max_plan_steps || 10} steps
             </code>
           </div>
 
@@ -137,7 +188,7 @@ export default function SettingsPage() {
               </span>
             </div>
             <code className="font-mono bg-muted px-2 py-1 rounded text-content-primary">
-              300 seconds
+              {info?.limits?.max_execution_seconds || 300} seconds
             </code>
           </div>
 
@@ -151,7 +202,7 @@ export default function SettingsPage() {
               </span>
             </div>
             <code className="font-mono bg-muted px-2 py-1 rounded text-content-primary">
-              60 seconds
+              {info?.limits?.step_timeout_seconds || 60} seconds
             </code>
           </div>
 
@@ -166,7 +217,7 @@ export default function SettingsPage() {
               </span>
             </div>
             <code className="font-mono bg-muted px-2 py-1 rounded text-content-primary">
-              $1.00 USD
+              ${info?.limits?.budget_usd_limit || "1.00"} USD
             </code>
           </div>
 

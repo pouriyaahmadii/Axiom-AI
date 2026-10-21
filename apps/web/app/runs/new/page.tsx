@@ -16,14 +16,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
+import { apiClient, ApiClientError } from "@/lib/api-client";
 
 const DOMAIN_OPTIONS = [
   { value: "ai-observability", label: "AI Observability & Evaluations" },
   { value: "devtools", label: "Developer Tools & Infrastructure" },
   { value: "databases", label: "Vector & Relational Databases" },
   { value: "security", label: "Cloud Security & Compliance" },
-  { value: "other", label: "Custom Domain..." },
+  { value: "general-tech", label: "General Technology Research" },
 ];
 
 export default function NewAnalysisPage() {
@@ -35,28 +37,82 @@ export default function NewAnalysisPage() {
   const [domain, setDomain] = React.useState("ai-observability");
   const [geography, setGeography] = React.useState("Global");
   const [budgetLimit, setBudgetLimit] = React.useState("1.00");
-  const [requirePlanApproval, setRequirePlanApproval] = React.useState(true);
-  const [requireReportApproval, setRequireReportApproval] =
-    React.useState(false);
-  const [providerMode, setProviderMode] = React.useState("mock");
+  const [providerMode, setProviderMode] = React.useState<"mock" | "live">(
+    "mock",
+  );
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const [validationError, setValidationError] = React.useState<string | null>(
+    null,
+  );
+  const [serverError, setServerError] = React.useState<string | null>(null);
+  const [correlationId, setCorrelationId] = React.useState<string | undefined>(
+    undefined,
+  );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!objective.trim() || objective.length < 10) {
-      setError("Objective must be at least 10 characters long.");
+    setValidationError(null);
+    setServerError(null);
+
+    // 1. Client-Side Usability Validations
+    const trimmedObjective = objective.trim();
+    if (!trimmedObjective || trimmedObjective.length < 10) {
+      setValidationError(
+        "Research objective must be at least 10 characters long.",
+      );
       return;
     }
-    setError(null);
+    if (trimmedObjective.length > 2000) {
+      setValidationError(
+        "Research objective exceeds maximum limit of 2000 characters.",
+      );
+      return;
+    }
+
+    const trimmedDomain = domain.trim();
+    if (!trimmedDomain || trimmedDomain.length < 2) {
+      setValidationError("Domain must be specified (at least 2 characters).");
+      return;
+    }
+
+    const budgetNum = parseFloat(budgetLimit);
+    if (isNaN(budgetNum) || budgetNum < 0.1 || budgetNum > 5.0) {
+      setValidationError("Budget limit must be between $0.10 and $5.00 USD.");
+      return;
+    }
+
     setIsSubmitting(true);
 
-    // Simulated acceptance transition for Phase 17 UI preview
-    setTimeout(() => {
+    try {
+      const idempotencyKey = `web-${Math.random().toString(36).substring(2, 10)}-${Date.now()}`;
+
+      const res = await apiClient.createRun({
+        objective: trimmedObjective,
+        domain: trimmedDomain,
+        geography: geography.trim() || null,
+        budget_usd_limit: budgetNum,
+        idempotency_key: idempotencyKey,
+        provider_override: {
+          llm: providerMode,
+          search: providerMode,
+        },
+      });
+
+      // HTTP 202 Accepted -> Navigate to the live run
+      router.push(`/runs/${res.run_id}`);
+    } catch (err) {
+      if (err instanceof ApiClientError) {
+        setServerError(err.message);
+        setCorrelationId(err.correlationId);
+      } else {
+        setServerError(
+          err instanceof Error
+            ? err.message
+            : "Failed to submit research run to backend API.",
+        );
+      }
       setIsSubmitting(false);
-      // Route to our seeded run detail view
-      router.push("/runs/9f8a2b10-c3d4-4e5f-a6b7-c8d9e0f1a2b3");
-    }, 600);
+    }
   };
 
   return (
@@ -86,6 +142,25 @@ export default function NewAnalysisPage() {
         </Link>
       </div>
 
+      {serverError && (
+        <Alert variant="danger" title="API Submission Error">
+          <div>
+            <p>{serverError}</p>
+            {correlationId && (
+              <span className="font-mono text-[10px] mt-1 block opacity-80">
+                Correlation ID: {correlationId}
+              </span>
+            )}
+          </div>
+        </Alert>
+      )}
+
+      {validationError && (
+        <Alert variant="warning" title="Validation Notice">
+          {validationError}
+        </Alert>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
           <CardHeader>
@@ -103,7 +178,11 @@ export default function NewAnalysisPage() {
               onChange={(e) => setObjective(e.target.value)}
               charCount={{ current: objective.length, max: 2000 }}
               hint="Specify the competitive entities, market segment, and evaluation parameters."
-              error={error || undefined}
+              error={
+                validationError && objective.length < 10
+                  ? validationError
+                  : undefined
+              }
             />
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -168,7 +247,7 @@ export default function NewAnalysisPage() {
                       )}
                     </div>
                     <span className="text-[11px] opacity-80 block mt-0.5">
-                      Deterministic offline seed
+                      Deterministic offline seed (Zero Cost)
                     </span>
                   </button>
 
@@ -193,49 +272,6 @@ export default function NewAnalysisPage() {
                   </button>
                 </div>
               </div>
-            </div>
-
-            {/* Checkpoints */}
-            <div className="pt-3 border-t border-border/60 space-y-2">
-              <label className="block text-xs font-semibold text-content-secondary">
-                Human-in-the-Loop Checkpoints
-              </label>
-
-              <label className="flex items-start gap-2.5 cursor-pointer text-xs text-content-primary">
-                <input
-                  type="checkbox"
-                  checked={requirePlanApproval}
-                  onChange={(e) => setRequirePlanApproval(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-border text-blue-600 focus:ring-blue-500"
-                />
-                <div>
-                  <span className="font-medium">
-                    Require approval on generated plan
-                  </span>
-                  <p className="text-[11px] text-content-muted">
-                    Execution pauses after plan synthesis to let you review the
-                    DAG and tools before any network requests occur.
-                  </p>
-                </div>
-              </label>
-
-              <label className="flex items-start gap-2.5 cursor-pointer text-xs text-content-primary">
-                <input
-                  type="checkbox"
-                  checked={requireReportApproval}
-                  onChange={(e) => setRequireReportApproval(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-border text-blue-600 focus:ring-blue-500"
-                />
-                <div>
-                  <span className="font-medium">
-                    Require approval before publishing final report
-                  </span>
-                  <p className="text-[11px] text-content-muted">
-                    Execution holds before marking the run completed to permit
-                    report draft review.
-                  </p>
-                </div>
-              </label>
             </div>
           </CardContent>
           <CardFooter className="flex justify-between">
