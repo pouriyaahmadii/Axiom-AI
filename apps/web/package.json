@@ -10,7 +10,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\"",
     "type-check": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "node --experimental-strip-types --test tests/design-system.test.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

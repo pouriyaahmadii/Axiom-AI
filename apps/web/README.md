@@ -3,6 +3,7 @@
 Next.js 14+ application providing the operational dashboard for AgentOps.
 
 ## Directory Layout
+
 - `app/`: Next.js App Router pages and layout entrypoints.
 - `components/`: Shared React presentational components.
 - `components/ui/`: Atomic UI primitives (buttons, inputs, cards, dialogs).

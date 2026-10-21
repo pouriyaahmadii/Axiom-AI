@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-canvas: #f8fafc;
+    --bg-surface: #ffffff;
+    --bg-surface-elevated: #ffffff;
+    --bg-muted: #f1f5f9;
+    --bg-subtle: #e2e8f0;
+
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --text-disabled: #94a3b8;
+
+    --border-default: #e2e8f0;
+    --border-subtle: #f1f5f9;
+    --border-strong: #cbd5e1;
+    --border-focus: #2563eb;
+
+    --accent-primary: #2563eb;
+    --accent-primary-hover: #1d4ed8;
+    --accent-primary-fg: #ffffff;
+    --accent-secondary: #0f172a;
+
+    --status-neutral-bg: #f1f5f9;
+    --status-neutral-text: #475569;
+    --status-neutral-border: #cbd5e1;
+
+    --status-info-bg: #eff6ff;
+    --status-info-text: #1e40af;
+    --status-info-border: #93c5fd;
+
+    --status-success-bg: #f0fdf4;
+    --status-success-text: #166534;
+    --status-success-border: #86efac;
+
+    --status-warning-bg: #fffbeb;
+    --status-warning-text: #92400e;
+    --status-warning-border: #fcd34d;
+
+    --status-danger-bg: #fef2f2;
+    --status-danger-text: #991b1b;
+    --status-danger-border: #fca5a5;
+  }
+
+  .dark {
+    --bg-canvas: #090d16;
+    --bg-surface: #0f172a;
+    --bg-surface-elevated: #1e293b;
+    --bg-muted: #1e293b;
+    --bg-subtle: #334155;
+
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --text-disabled: #64748b;
+
+    --border-default: #1e293b;
+    --border-subtle: #0f172a;
+    --border-strong: #334155;
+    --border-focus: #3b82f6;
+
+    --accent-primary: #3b82f6;
+    --accent-primary-hover: #60a5fa;
+    --accent-primary-fg: #0f172a;
+    --accent-secondary: #f8fafc;
+
+    --status-neutral-bg: #1e293b;
+    --status-neutral-text: #94a3b8;
+    --status-neutral-border: #334155;
+
+    --status-info-bg: #172554;
+    --status-info-text: #93c5fd;
+    --status-info-border: #1e40af;
+
+    --status-success-bg: #064e3b;
+    --status-success-text: #6ee7b7;
+    --status-success-border: #047857;
+
+    --status-warning-bg: #451a03;
+    --status-warning-text: #fcd34d;
+    --status-warning-border: #b45309;
+
+    --status-danger-bg: #4c0519;
+    --status-danger-text: #fda4af;
+    --status-danger-border: #be123c;
+  }
+
+  body {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Accessible visible focus ring utility */
+.focus-ring {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900;
+}
+
+/* Reduced motion preference respect */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
