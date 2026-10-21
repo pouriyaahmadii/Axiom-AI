@@ -90,7 +90,7 @@ def test_agent_graph_full_execution_with_mock_provider() -> None:
 
     assert final_output["status"] == "COMPLETED"
     assert final_output["steps_executed"] == 3
-    assert len(final_output["evidence_items"]) == 3
+    assert len(final_output["evidence_items"]) >= 3
     assert all("content_hash" in ev for ev in final_output["evidence_items"])
     assert final_output["final_report"] is not None
     assert "grounded_findings" in final_output["final_report"]

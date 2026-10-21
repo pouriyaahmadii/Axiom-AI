@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from typing import Any
 
 import structlog
@@ -11,9 +10,10 @@ from langgraph.types import interrupt
 from app.agents.planner import ALLOWED_TASK_TYPES, validate_plan_dag
 from app.agents.state import AgentState
 from app.core.config import get_settings
-from app.core.exceptions import DeterministicValidationError
-from app.core.security import SecurityValidationError, is_safe_url
 from app.providers import get_llm_provider
+from app.tools.citation_auditor import CitationAuditor
+from app.tools.evidence import EvidenceService
+from app.tools.registry import get_tool_registry
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
@@ -239,49 +239,33 @@ def execute_task_node(state: AgentState) -> dict[str, Any]:
     step_results = dict(state.get("step_results", {}))
 
     try:
-        # Bounded tool handlers
-        if tool_name == "web_search":
-            query = params.get("query", state["objective"])
-            # In mock/offline mode, return simulated verified competitor search hits
-            result = {
-                "query": query,
-                "hits": [
-                    {
-                        "title": f"{state['domain']} Benchmark Overview",
-                        "url": f"https://example.com/{state['domain']}/benchmark",
-                        "snippet": f"Competitive landscape analysis for {state['domain']}. Documented pricing starting from $49/mo.",
-                    },
-                    {
-                        "title": "Enterprise Cloud Observability Feature Matrix",
-                        "url": "https://example.com/features/matrix",
-                        "snippet": "Feature comparison: Docker Compose deployment, 99.95% API SLA, self-hosted data isolation.",
-                    },
-                ],
-            }
-        elif tool_name == "fetch_document":
-            url = params.get("url") or f"https://example.com/{params.get('domain', 'tech')}/pricing"
-            # SSRF validation check
-            safe, reason = is_safe_url(url)
-            if not safe:
-                raise SecurityValidationError(f"SSRF policy blocked request to '{url}': {reason}")
+        registry = get_tool_registry()
+        tool_params = {
+            **params,
+            "run_id": str(state.get("run_id", "run-default")),
+            "step_identifier": step_id,
+            "domain": str(state.get("domain", "general")),
+            "llm_provider": state.get("llm_provider"),
+            "query": params.get("query", state.get("objective")),
+        }
+        tool_result = registry.execute(tool_name, tool_params)
 
-            result = {
-                "url": url,
-                "content": (
-                    f"Verified Documentation for {params.get('domain', state['domain'])}: "
-                    "Features full offline mock capabilities, multi-database PostgreSQL support, and transactional outbox."
-                ),
+        if not tool_result.success:
+            return {
+                "fatal_error": tool_result.error
+                or f"Step '{step_id}' failed during tool execution.",
+                "status": "FAILED",
             }
-        elif tool_name == "extract_metrics":
-            llm = get_llm_provider(state.get("llm_provider"))
-            sample_text = (
-                f"Competitor data extracted for {state['domain']}: pricing $49/mo, 99.95% uptime."
-            )
-            ext_res = llm.extract_information(sample_text)
-            result = ext_res.data.model_dump()
-            cost_usd += float(ext_res.usage.cost_usd)
-        else:
-            raise DeterministicValidationError(f"Unhandled tool type: {tool_name}")
+
+        result = dict(tool_result.data)
+        if tool_result.evidence_records:
+            result["evidence_records"] = tool_result.evidence_records
+        if tool_result.content_hash:
+            result["content_hash"] = tool_result.content_hash
+
+        # Track token costs if extract_metrics or LLM was invoked
+        if tool_name == "extract_metrics" and "cost_usd" in result:
+            cost_usd += float(result.get("cost_usd", 0.0))
 
         step_results[step_id] = result
         return {
@@ -315,20 +299,32 @@ def validate_step_result_node(state: AgentState) -> dict[str, Any]:
 
     evidence_items = list(state.get("evidence_items", []))
 
-    # Construct verifiable evidence snippet
-    snippet = str(result)
-    content_hash = hashlib.sha256(snippet.encode("utf-8")).hexdigest()
+    # Incorporate tool-generated evidence records if available
+    tool_ev_records = result.get("evidence_records") if isinstance(result, dict) else None
+    if tool_ev_records and isinstance(tool_ev_records, list):
+        for ev in tool_ev_records:
+            evidence_items.append(ev)
+    else:
+        # Construct verifiable evidence snippet using canonical EvidenceService
+        snippet = str(result.get("content") or result.get("hits") or result)
+        url = str(
+            result.get("url")
+            or (
+                result.get("hits", [{}])[0].get("url")
+                if isinstance(result.get("hits"), list) and result.get("hits")
+                else "https://example.com/source"
+            )
+        )
+        ev_record = EvidenceService.create_evidence_record(
+            run_id=str(state.get("run_id", "run-default")),
+            step_identifier=step_id,
+            tool_name=str(step.get("tool_name", "unknown")),
+            source_url=url,
+            snippet=snippet[:400],
+        )
+        evidence_items.append(ev_record)
 
-    evidence_items.append(
-        {
-            "step_identifier": step_id,
-            "tool_name": step.get("tool_name"),
-            "content_hash": content_hash,
-            "snippet": snippet[:400],
-        }
-    )
-
-    logger.info("step_result_validated", step_id=step_id, content_hash=content_hash[:12])
+    logger.info("step_result_validated", step_id=step_id, total_evidence=len(evidence_items))
     return {"evidence_items": evidence_items}
 
 
@@ -410,6 +406,13 @@ def validate_report_node(state: AgentState) -> dict[str, Any]:
         errors.append("Report lacks substantive strategic inferences section.")
     if not markdown or len(markdown.strip()) < 50:
         errors.append("Report markdown content is truncated or missing required headings.")
+
+    # Audit empirical citation grounding
+    evidence = state.get("evidence_items", [])
+    audit_res = CitationAuditor.audit_report_grounding(report, evidence)
+    if not audit_res.is_grounded:
+        for hall in audit_res.hallucinated_citations:
+            errors.append(f"Grounding audit warning: ungrounded citation [{hall}] detected.")
 
     if errors:
         logger.warning("report_structure_warnings", error_count=len(errors))

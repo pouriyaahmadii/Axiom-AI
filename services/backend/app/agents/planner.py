@@ -5,11 +5,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from typing import Any
 
-ALLOWED_TASK_TYPES = {
-    "web_search",
-    "fetch_document",
-    "extract_metrics",
-}
+from app.tools.registry import ALLOWED_TASK_TYPES
 
 
 def validate_plan_dag(
