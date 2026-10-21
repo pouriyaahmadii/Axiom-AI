@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from httpx import AsyncClient
 
-from app.models import Report, Run, RunStep
+from app.models import EvidenceItem, Report, Run, RunStep
 
 
 @pytest.mark.integration
@@ -244,3 +244,40 @@ async def test_get_run_report(async_client: AsyncClient, async_db_session):
     report_data = res_200.json()
     assert report_data["title"] == "Final Research Report"
     assert report_data["citations"][0]["marker"] == "[^1]"
+
+
+@pytest.mark.integration
+async def test_get_run_evidence(async_client: AsyncClient, async_db_session):
+    """Verify retrieving empirical evidence items for a research run."""
+    run = Run(objective="Evidence retrieval run", domain="security")
+    async_db_session.add(run)
+    await async_db_session.commit()
+
+    # 1. Retrieve evidence when empty -> 200 with empty items list
+    res_empty = await async_client.get(f"/api/v1/runs/{run.id}/evidence")
+    assert res_empty.status_code == 200
+    assert res_empty.json()["total"] == 0
+    assert res_empty.json()["items"] == []
+
+    # 2. Add evidence items
+    ev1 = EvidenceItem(
+        run_id=run.id,
+        source_url="https://example.com/pricing",
+        content_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        raw_snippet="Standard tier is $8/user/month.",
+        metadata_payload={"related_entity": "Linear"},
+    )
+    async_db_session.add(ev1)
+    await async_db_session.commit()
+
+    # 3. Retrieve evidence -> 200 with 1 item
+    res_item = await async_client.get(f"/api/v1/runs/{run.id}/evidence")
+    assert res_item.status_code == 200
+    data = res_item.json()
+    assert data["total"] == 1
+    assert data["items"][0]["source_url"] == "https://example.com/pricing"
+    assert (
+        data["items"][0]["content_hash"]
+        == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    )
+    assert data["items"][0]["raw_snippet"] == "Standard tier is $8/user/month."

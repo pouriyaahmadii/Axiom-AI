@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_BASE_URL =
-  process.env["AGENTOPS_API_URL"] || "http://127.0.0.1:8000";
+  process.env["AGENTOPS_API_URL"] ||
+  process.env["BACKEND_INTERNAL_URL"] ||
+  "http://127.0.0.1:8000";
 const INTERNAL_API_KEY =
-  process.env["AGENTOPS_API_KEY"] || "agentops-dev-internal-key";
+  process.env["AGENTOPS_API_KEY"] ||
+  process.env["API_KEY"] ||
+  "agentops-dev-internal-key";
 
 /**
  * Universal Next.js Server-Side Proxy Route Handler.

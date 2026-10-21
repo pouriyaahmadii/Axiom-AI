@@ -14,11 +14,13 @@ from app.schemas.events import AuditEventListResponse, AuditEventResponse
 from app.schemas.reports import ReportResponse
 from app.schemas.runs import (
     ApprovalPendingResponse,
+    EvidenceItemResponse,
     PlanSummaryResponse,
     RunCancelResponse,
     RunCreateRequest,
     RunCreateResponse,
     RunDetailResponse,
+    RunEvidenceListResponse,
     RunListResponse,
     RunSummaryResponse,
     StepCompactResponse,
@@ -285,3 +287,33 @@ async def get_run_report(
         created_at=report.created_at,
         updated_at=report.updated_at,
     )
+
+
+@router.get(
+    "/{run_id}/evidence",
+    response_model=RunEvidenceListResponse,
+    summary="Get captured evidence for a run",
+    description="Retrieves all immutable empirical evidence snippets and source hashes captured for a run.",
+    dependencies=[Depends(verify_api_key)],
+)
+async def get_run_evidence(
+    run_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> RunEvidenceListResponse:
+    """Retrieve captured evidence records for a research run."""
+    items = await run_service.get_run_evidence(session, run_id)
+    evidence_items = [
+        EvidenceItemResponse(
+            evidence_id=e.id,
+            run_id=e.run_id,
+            step_id=e.step_id,
+            source_id=e.source_id,
+            source_url=e.source_url,
+            content_hash=e.content_hash,
+            raw_snippet=e.raw_snippet,
+            metadata_payload=e.metadata_payload,
+            created_at=e.created_at,
+        )
+        for e in items
+    ]
+    return RunEvidenceListResponse(run_id=run_id, items=evidence_items, total=len(evidence_items))

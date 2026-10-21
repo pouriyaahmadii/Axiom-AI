@@ -209,12 +209,15 @@ When preparing the development environment for a clean demonstration without wip
 docker compose -p agentops exec -T postgres psql -U agentops_user -d agentops_db << 'EOF'
 BEGIN;
 TRUNCATE TABLE audit_events CASCADE;
-TRUNCATE TABLE approval_requests CASCADE;
-TRUNCATE TABLE report_citations CASCADE;
-TRUNCATE TABLE reports CASCADE;
-TRUNCATE TABLE evidence CASCADE;
-TRUNCATE TABLE run_steps CASCADE;
 TRUNCATE TABLE outbox_events CASCADE;
+TRUNCATE TABLE llm_calls CASCADE;
+TRUNCATE TABLE tool_invocations CASCADE;
+TRUNCATE TABLE evidence_items CASCADE;
+TRUNCATE TABLE approvals CASCADE;
+TRUNCATE TABLE reports CASCADE;
+TRUNCATE TABLE run_steps CASCADE;
+TRUNCATE TABLE graph_checkpoints CASCADE;
+TRUNCATE TABLE sources CASCADE;
 TRUNCATE TABLE runs CASCADE;
 COMMIT;
 EOF

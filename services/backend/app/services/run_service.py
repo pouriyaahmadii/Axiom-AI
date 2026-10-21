@@ -11,7 +11,16 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.core.exceptions import ConflictError, InvalidStateTransitionError, NotFoundError
-from app.models import AuditEvent, AuditEventType, OutboxEvent, Report, Run, RunStatus, RunStep
+from app.models import (
+    AuditEvent,
+    AuditEventType,
+    EvidenceItem,
+    OutboxEvent,
+    Report,
+    Run,
+    RunStatus,
+    RunStep,
+)
 from app.schemas.runs import RunCreateRequest
 
 settings = get_settings()
@@ -244,3 +253,17 @@ async def get_run_report(session: AsyncSession, run_id: uuid.UUID) -> Report:
     if not report:
         raise NotFoundError(f"Report has not been synthesized yet for run '{run_id}'.")
     return report
+
+
+async def get_run_evidence(session: AsyncSession, run_id: uuid.UUID) -> list[EvidenceItem]:
+    """Retrieve immutable empirical evidence records for a research run."""
+    # Ensure run exists
+    await get_run_by_id(session, run_id)
+
+    stmt = (
+        select(EvidenceItem)
+        .where(EvidenceItem.run_id == run_id)
+        .order_by(EvidenceItem.created_at.asc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())

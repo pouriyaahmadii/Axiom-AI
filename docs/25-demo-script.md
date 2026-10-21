@@ -200,22 +200,26 @@ curl -s http://127.0.0.1:8000/api/v1/approvals/pending \
 
 ### Step C.2: Operator Submits Approval
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/approvals/appr-89b1c2d3-4567-890a-bcde-f01234567890/decision" \
+curl -X POST "http://127.0.0.1:8000/api/v1/approvals/89b1c2d3-4567-890a-bcde-f01234567890/approve" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: agentops-dev-internal-key" \
+  -H "X-Operator-Id: lead_researcher@agentops.local" \
   -d '{
-    "decision": "APPROVED",
-    "approver": "lead_researcher@agentops.local",
-    "comments": "Verified claim against cited pricing documentation."
+    "operator_notes": "Verified claim against cited pricing documentation."
   }'
 ```
 
 **Response (`200 OK`):**
 ```json
 {
-  "approval_id": "appr-89b1c2d3-4567-890a-bcde-f01234567890",
+  "approval_id": "89b1c2d3-4567-890a-bcde-f01234567890",
+  "run_id": "70cf52eb-72e0-4ea4-abbf-a0377e565683",
+  "action": "step_execution",
   "status": "APPROVED",
-  "decided_at": "2026-10-22T00:16:30.000Z"
+  "run_status": "RUNNING",
+  "operator_notes": "Verified claim against cited pricing documentation.",
+  "resolved_by": "lead_researcher@agentops.local",
+  "resolved_at": "2026-10-22T00:16:30.000Z"
 }
 ```
 The Celery worker resumes the graph from the persisted checkpoint without re-executing previous steps.

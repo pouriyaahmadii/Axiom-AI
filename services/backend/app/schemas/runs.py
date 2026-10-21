@@ -140,3 +140,29 @@ class RunCancelResponse(BaseModel):
     run_id: uuid.UUID
     status: RunStatus
     message: str
+
+
+class EvidenceItemResponse(BaseModel):
+    """An individual empirical evidence record captured during research execution."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    evidence_id: uuid.UUID
+    run_id: uuid.UUID
+    step_id: uuid.UUID | None = None
+    source_id: uuid.UUID | None = None
+    source_url: str
+    content_hash: str
+    raw_snippet: str
+    metadata_payload: dict[str, Any] | None = None
+    created_at: datetime
+
+
+class RunEvidenceListResponse(BaseModel):
+    """Collection of immutable evidence items captured for a run."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    run_id: uuid.UUID
+    items: list[EvidenceItemResponse]
+    total: int

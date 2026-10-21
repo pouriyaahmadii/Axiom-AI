@@ -192,6 +192,24 @@ export interface CitationItem {
   claim?: string;
 }
 
+export interface EvidenceItem {
+  evidence_id: string;
+  run_id: string;
+  step_id?: string | null;
+  source_id?: string | null;
+  source_url: string;
+  content_hash: string;
+  raw_snippet: string;
+  metadata_payload?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface RunEvidenceListResponse {
+  run_id: string;
+  items: EvidenceItem[];
+  total: number;
+}
+
 export interface ReportResponse {
   report_id: string;
   run_id: string;
@@ -373,6 +391,13 @@ export const apiClient = {
    */
   async getRunReport(runId: string): Promise<ReportResponse> {
     return request<ReportResponse>(`runs/${runId}/report`);
+  },
+
+  /**
+   * Retrieve captured empirical evidence items for a run.
+   */
+  async getRunEvidence(runId: string): Promise<RunEvidenceListResponse> {
+    return request<RunEvidenceListResponse>(`runs/${runId}/evidence`);
   },
 
   /**

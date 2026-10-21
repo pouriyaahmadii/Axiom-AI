@@ -421,15 +421,26 @@ curl -s http://127.0.0.1:8000/api/v1/runs/70cf52eb-72e0-4ea4-abbf-a0377e565683/e
 ]
 ```
 
-### 3. Submit Human Approval Decision
+### 3. Submit Human Approval Verdict
 ```bash
-curl -X POST http://127.0.0.1:8000/api/v1/approvals/appr-001/decision \
+# Approve a pending execution checkpoint
+curl -X POST http://127.0.0.1:8000/api/v1/approvals/89b1c2d3-4567-890a-bcde-f01234567890/approve \
   -H "Content-Type: application/json" \
   -H "X-API-Key: agentops-dev-internal-key" \
+  -H "X-Operator-Id: senior_analyst@agentops.local" \
   -d '{
-    "decision": "APPROVED",
-    "reason": "Plan validated and approved by senior research operator.",
-    "action_payload_hash": "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0"
+    "operator_notes": "Plan validated and approved by senior research operator.",
+    "expected_payload_hash": "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0"
+  }'
+
+# Or reject with documented rationale
+curl -X POST http://127.0.0.1:8000/api/v1/approvals/89b1c2d3-4567-890a-bcde-f01234567890/reject \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: agentops-dev-internal-key" \
+  -H "X-Operator-Id: senior_analyst@agentops.local" \
+  -d '{
+    "reason": "Plan step exceeds research scope; please narrow query bounds.",
+    "abort_run": true
   }'
 ```
 
