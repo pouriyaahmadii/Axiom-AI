@@ -1,0 +1,202 @@
+{
+  "name": "AgentOps Run Failure Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agentops-run-failed",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook-failed",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "agentops-run-failed-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate run-failed event payload\nconst payload = $json.body || $json;\n\n// Payload size limit: max 50KB\nconst rawString = JSON.stringify(payload);\nif (rawString.length > 51200) {\n  return [{\n    json: {\n      is_valid: false,\n      error: 'Payload size limit exceeded (maximum 50KB allowed)'\n    }\n  }];\n}\n\nconst run_id = (payload.run_id || '').trim();\nconst uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nif (!run_id || !uuidRegex.test(run_id)) {\n  return [{\n    json: {\n      is_valid: false,\n      error: 'Invalid or missing run_id (must be a valid UUID)'\n    }\n  }];\n}\n\nconst event_type = payload.event_type || payload.status || 'RUN_FAILED';\nif (event_type !== 'RUN_FAILED' && event_type !== 'failed') {\n  return [{\n    json: {\n      is_valid: false,\n      error: 'Invalid event_type (expected RUN_FAILED or failed)'\n    }\n  }];\n}\n\nconst error_message = payload.error_message || payload.error || 'Unknown runtime error occurred';\nconst correlation_id = payload.correlation_id || ('corr-' + Math.random().toString(36).substring(2, 15));\nconst idempotency_key = payload.idempotency_key || ('failed:' + run_id);\n\nreturn [{\n  json: {\n    is_valid: true,\n    run_id,\n    event_type,\n    error_message,\n    correlation_id,\n    idempotency_key,\n    failed_at: payload.failed_at || new Date().toISOString()\n  }\n}];"
+      },
+      "id": "node-validate-failed",
+      "name": "Validate Failure Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-if-failed-valid",
+      "name": "Check If Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": {\n    \"code\": \"INVALID_EVENT_PAYLOAD\",\n    \"message\": \"{{ $json.error }}\"\n  }\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "node-respond-failed-400",
+      "name": "Respond 400 Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 440]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.AGENTOPS_API_URL || 'http://127.0.0.1:8000' }}/api/v1/runs/{{ $json.run_id }}/events?limit=10",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.AGENTOPS_API_KEY || 'agentops-dev-internal-key' }}"
+            },
+            {
+              "name": "X-Correlation-ID",
+              "value": "={{ $json.correlation_id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "node-fetch-events",
+      "name": "Fetch Run Audit Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format Incident Alert for on-call engineers\nconst eventsResponse = $json;\nconst validation = $('Validate Failure Event').first().json;\n\nconst items = Array.isArray(eventsResponse.items) ? eventsResponse.items : [];\nconst recentEvents = items.slice(0, 5).map(e => `- [${e.event_type}] ${e.actor}: ${JSON.stringify(e.payload || {})}`).join('\\n');\n\nconst formattedAlert = `🚨 **AgentOps Failure Incident Alert**\\n\\n` +\n  `**Run ID:** \\`${validation.run_id}\\`\\n` +\n  `**Correlation ID:** \\`${validation.correlation_id}\\`\\n` +\n  `**Severity:** CRITICAL\\n` +\n  `**Error Message:**\\n${validation.error_message}\\n\\n` +\n  `**Recent Audit Events:**\\n${recentEvents || 'No audit events recorded'}\\n\\n` +\n  `*Dispatched via AgentOps n8n Incident Pipeline*`;\n\nreturn [{\n  json: {\n    notification_type: 'RUN_FAILED',\n    severity: 'CRITICAL',\n    run_id: validation.run_id,\n    correlation_id: validation.correlation_id,\n    idempotency_key: validation.idempotency_key,\n    error_summary: validation.error_message,\n    recent_events_count: items.length,\n    formatted_alert: formattedAlert,\n    status: 'ALERTED'\n  }\n}];"
+      },
+      "id": "node-format-incident-alert",
+      "name": "Format Incident Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {},
+      "id": "node-failed-safe-sink",
+      "name": "Safe Demo Logger (Incident Sink)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Run failure incident alert delivered successfully\",\n  \"run_id\": \"{{ $json.run_id }}\",\n  \"severity\": \"{{ $json.severity }}\",\n  \"idempotency_key\": \"{{ $json.idempotency_key }}\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "node-respond-failed-200",
+      "name": "Respond 200 Incident Alerted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1560, 200]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Failure Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Failure Event": {
+      "main": [
+        [
+          {
+            "node": "Check If Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Valid": {
+      "main": [
+        [
+          {
+            "node": "Fetch Run Audit Events",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400 Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Run Audit Events": {
+      "main": [
+        [
+          {
+            "node": "Format Incident Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Incident Alert": {
+      "main": [
+        [
+          {
+            "node": "Safe Demo Logger (Incident Sink)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safe Demo Logger (Incident Sink)": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Incident Alerted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

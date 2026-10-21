@@ -1,0 +1,162 @@
+{
+  "name": "AgentOps Scheduled Research Trigger",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [1],
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-weekly",
+      "name": "Schedule Trigger (Weekly)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Construct weekly scheduled research run payload\nconst now = new Date();\nconst dateString = now.toISOString().slice(0, 10);\n\n// Generate deterministic weekly idempotency key to prevent double execution\nconst idempotency_key = `scheduled-weekly-scan-${dateString}`;\nconst correlation_id = `corr-scheduled-${Date.now()}`;\n\nreturn [{\n  json: {\n    objective: 'Automated weekly competitive landscape and product intelligence scan for AI observability platforms',\n    domain: 'ai-observability',\n    geography: 'Global',\n    idempotency_key,\n    correlation_id,\n    scheduled_time: now.toISOString()\n  }\n}];"
+      },
+      "id": "node-construct-scheduled-payload",
+      "name": "Construct Scheduled Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AGENTOPS_API_URL || 'http://127.0.0.1:8000' }}/api/v1/runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.AGENTOPS_API_KEY || 'agentops-dev-internal-key' }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Correlation-ID",
+              "value": "={{ $json.correlation_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"objective\": \"{{ $json.objective }}\",\n  \"domain\": \"{{ $json.domain }}\",\n  \"geography\": \"{{ $json.geography }}\",\n  \"idempotency_key\": \"{{ $json.idempotency_key }}\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "node-http-submit-scheduled",
+      "name": "Submit Run to AgentOps API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.run_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "node-if-scheduled-success",
+      "name": "Check API Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {},
+      "id": "node-scheduled-safe-sink",
+      "name": "Scheduled Run Logger (Safe Demo Sink)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1120, 220]
+    },
+    {
+      "parameters": {},
+      "id": "node-scheduled-error-sink",
+      "name": "Scheduled Run Error Logger",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1120, 380]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (Weekly)": {
+      "main": [
+        [
+          {
+            "node": "Construct Scheduled Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construct Scheduled Payload": {
+      "main": [
+        [
+          {
+            "node": "Submit Run to AgentOps API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit Run to AgentOps API": {
+      "main": [
+        [
+          {
+            "node": "Check API Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check API Success": {
+      "main": [
+        [
+          {
+            "node": "Scheduled Run Logger (Safe Demo Sink)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Scheduled Run Error Logger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

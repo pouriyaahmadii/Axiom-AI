@@ -1,0 +1,218 @@
+{
+  "name": "AgentOps Run Trigger",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agentops-run-trigger",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-trigger-1",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "agentops-run-trigger-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate incoming payload and enforce security limits\nconst payload = $json.body || $json;\n\n// Payload size limit: reject oversized payloads > 50KB\nconst rawString = JSON.stringify(payload);\nif (rawString.length > 51200) {\n  return [{\n    json: {\n      is_valid: false,\n      error: 'Payload size limit exceeded (maximum 50KB allowed)'\n    }\n  }];\n}\n\nconst objective = (payload.objective || '').trim();\nconst domain = (payload.domain || '').trim();\nconst geography = payload.geography ? payload.geography.trim() : null;\n\n// Validate objective length (10 to 2000 characters)\nif (!objective || objective.length < 10 || objective.length > 2000) {\n  return [{\n    json: {\n      is_valid: false,\n      error: 'Objective must be a string between 10 and 2000 characters'\n    }\n  }];\n}\n\n// Validate domain\nif (!domain || domain.length < 2 || domain.length > 100) {\n  return [{\n    json: {\n      is_valid: false,\n      error: 'Domain must be a non-empty string between 2 and 100 characters'\n    }\n  }];\n}\n\n// Generate or preserve correlation_id and idempotency_key\nconst correlation_id = payload.correlation_id || ('corr-' + Math.random().toString(36).substring(2, 15));\nconst idempotency_key = payload.idempotency_key || ('idem-' + Math.random().toString(36).substring(2, 15) + '-' + Date.now());\n\nreturn [{\n  json: {\n    is_valid: true,\n    objective,\n    domain,\n    geography,\n    correlation_id,\n    idempotency_key\n  }\n}];"
+      },
+      "id": "node-validate-2",
+      "name": "Validate & Sanitize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-if-valid-3",
+      "name": "Check If Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": {\n    \"code\": \"VALIDATION_ERROR\",\n    \"message\": \"{{ $json.error }}\"\n  }\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "node-respond-400",
+      "name": "Respond 400 Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 440]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AGENTOPS_API_URL || 'http://127.0.0.1:8000' }}/api/v1/runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.AGENTOPS_API_KEY || 'agentops-dev-internal-key' }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Correlation-ID",
+              "value": "={{ $json.correlation_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"objective\": \"{{ $json.objective }}\",\n  \"domain\": \"{{ $json.domain }}\",\n  \"geography\": {{ $json.geography ? '\"' + $json.geography + '\"' : 'null' }},\n  \"idempotency_key\": \"{{ $json.idempotency_key }}\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "node-http-submit-4",
+      "name": "Submit Run to AgentOps API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.run_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "node-if-success-5",
+      "name": "Check API Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Research run accepted and enqueued successfully\",\n  \"run_id\": \"{{ $json.run_id }}\",\n  \"status\": \"{{ $json.status }}\",\n  \"correlation_id\": \"{{ $('Validate & Sanitize Input').first().json.correlation_id }}\",\n  \"idempotency_key\": \"{{ $('Validate & Sanitize Input').first().json.idempotency_key }}\"\n}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "node-respond-202",
+      "name": "Respond 202 Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 120]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": {\n    \"code\": \"BACKEND_DISPATCH_FAILED\",\n    \"message\": \"Failed to submit research run to AgentOps backend API\",\n    \"details\": {{ JSON.stringify($json) }}\n  }\n}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "node-respond-502",
+      "name": "Respond 502 Backend Failure",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 280]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate & Sanitize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Sanitize Input": {
+      "main": [
+        [
+          {
+            "node": "Check If Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Valid": {
+      "main": [
+        [
+          {
+            "node": "Submit Run to AgentOps API",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400 Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit Run to AgentOps API": {
+      "main": [
+        [
+          {
+            "node": "Check API Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check API Success": {
+      "main": [
+        [
+          {
+            "node": "Respond 202 Accepted",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 502 Backend Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

@@ -1,0 +1,251 @@
+{
+  "name": "AgentOps Run Completed Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agentops-run-completed",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook-completed",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "agentops-run-completed-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate run-completed event payload\nconst payload = $json.body || $json;\n\n// Payload size limit: max 50KB\nconst rawString = JSON.stringify(payload);\nif (rawString.length > 51200) {\n  return [{\n    json: {\n      is_valid: false,\n      error: 'Payload size limit exceeded (maximum 50KB allowed)'\n    }\n  }];\n}\n\nconst run_id = (payload.run_id || '').trim();\nconst uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nif (!run_id || !uuidRegex.test(run_id)) {\n  return [{\n    json: {\n      is_valid: false,\n      error: 'Invalid or missing run_id (must be a valid UUID)'\n    }\n  }];\n}\n\nconst event_type = payload.event_type || payload.status || 'RUN_COMPLETED';\nif (event_type !== 'RUN_COMPLETED' && event_type !== 'completed') {\n  return [{\n    json: {\n      is_valid: false,\n      error: 'Invalid event_type (expected RUN_COMPLETED or completed)'\n    }\n  }];\n}\n\nconst correlation_id = payload.correlation_id || ('corr-' + Math.random().toString(36).substring(2, 15));\nconst idempotency_key = payload.idempotency_key || ('completed:' + run_id);\n\nreturn [{\n  json: {\n    is_valid: true,\n    run_id,\n    event_type,\n    correlation_id,\n    idempotency_key,\n    completed_at: payload.completed_at || new Date().toISOString()\n  }\n}];"
+      },
+      "id": "node-validate-completed",
+      "name": "Validate Completed Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-if-completed-valid",
+      "name": "Check If Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": {\n    \"code\": \"INVALID_EVENT_PAYLOAD\",\n    \"message\": \"{{ $json.error }}\"\n  }\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "node-respond-completed-400",
+      "name": "Respond 400 Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 440]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.AGENTOPS_API_URL || 'http://127.0.0.1:8000' }}/api/v1/runs/{{ $json.run_id }}/report",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.AGENTOPS_API_KEY || 'agentops-dev-internal-key' }}"
+            },
+            {
+              "name": "X-Correlation-ID",
+              "value": "={{ $json.correlation_id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "node-fetch-report",
+      "name": "Fetch Synthesized Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.report_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "node-if-report-success",
+      "name": "Check Report Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format Markdown notification summary\nconst report = $json;\nconst validation = $('Validate Completed Event').first().json;\n\nconst title = report.title || 'AgentOps Research Report';\nconst summary = report.executive_summary || 'No executive summary provided.';\nconst citationsCount = Array.isArray(report.citations) ? report.citations.length : 0;\n\nconst formattedMessage = `### 🎯 Research Run Completed Successfully\\n\\n` +\n  `**Run ID:** \\`${validation.run_id}\\`\\n` +\n  `**Title:** ${title}\\n` +\n  `**Citations Verified:** ${citationsCount}\\n\\n` +\n  `**Executive Summary:**\\n${summary}\\n\\n` +\n  `*Dispatched via AgentOps n8n Notification Pipeline*`;\n\nreturn [{\n  json: {\n    notification_type: 'RUN_COMPLETED',\n    run_id: validation.run_id,\n    correlation_id: validation.correlation_id,\n    idempotency_key: validation.idempotency_key,\n    title,\n    executive_summary: summary,\n    citations_count: citationsCount,\n    formatted_message: formattedMessage,\n    status: 'DELIVERED'\n  }\n}];"
+      },
+      "id": "node-format-completed-summary",
+      "name": "Format Completion Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 120]
+    },
+    {
+      "parameters": {},
+      "id": "node-completed-safe-sink",
+      "name": "Safe Demo Logger (Notification Sink)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1560, 120]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Run completion notification delivered successfully\",\n  \"run_id\": \"{{ $json.run_id }}\",\n  \"idempotency_key\": \"{{ $json.idempotency_key }}\",\n  \"citations_count\": {{ $json.citations_count }}\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "node-respond-completed-200",
+      "name": "Respond 200 Delivered",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1780, 120]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": {\n    \"code\": \"REPORT_NOT_FOUND\",\n    \"message\": \"Failed to retrieve completed report from AgentOps backend\",\n    \"details\": {{ JSON.stringify($json) }}\n  }\n}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "node-respond-report-502",
+      "name": "Respond 502 Report Fetch Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 280]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Completed Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Completed Event": {
+      "main": [
+        [
+          {
+            "node": "Check If Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Valid": {
+      "main": [
+        [
+          {
+            "node": "Fetch Synthesized Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400 Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Synthesized Report": {
+      "main": [
+        [
+          {
+            "node": "Check Report Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Report Exists": {
+      "main": [
+        [
+          {
+            "node": "Format Completion Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 502 Report Fetch Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Completion Summary": {
+      "main": [
+        [
+          {
+            "node": "Safe Demo Logger (Notification Sink)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safe Demo Logger (Notification Sink)": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Delivered",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

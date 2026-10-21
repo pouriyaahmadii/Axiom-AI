@@ -1,0 +1,163 @@
+{
+  "name": "AgentOps Approval Required Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agentops-approval-required",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook-approval",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "agentops-approval-required-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate approval-required event payload\nconst payload = $json.body || $json;\n\n// Payload size limit: max 50KB\nconst rawString = JSON.stringify(payload);\nif (rawString.length > 51200) {\n  return [{\n    json: {\n      is_valid: false,\n      error: 'Payload size limit exceeded (maximum 50KB allowed)'\n    }\n  }];\n}\n\nconst approval_id = (payload.approval_id || '').trim();\nconst run_id = (payload.run_id || '').trim();\nconst uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\n\nif (!approval_id || !uuidRegex.test(approval_id)) {\n  return [{\n    json: {\n      is_valid: false,\n      error: 'Invalid or missing approval_id (must be a valid UUID)'\n    }\n  }];\n}\n\nif (!run_id || !uuidRegex.test(run_id)) {\n  return [{\n    json: {\n      is_valid: false,\n      error: 'Invalid or missing run_id (must be a valid UUID)'\n    }\n  }];\n}\n\nconst action = payload.action || 'STEP_EXECUTION';\nconst payload_hash = payload.payload_hash || null;\nconst proposed_action = payload.proposed_action || {};\nconst expires_at = payload.expires_at || null;\nconst correlation_id = payload.correlation_id || ('corr-' + Math.random().toString(36).substring(2, 15));\nconst idempotency_key = payload.idempotency_key || ('approval:' + approval_id + ':' + (payload_hash || 'v1'));\n\nreturn [{\n  json: {\n    is_valid: true,\n    approval_id,\n    run_id,\n    step_id: payload.step_id || null,\n    action,\n    payload_hash,\n    proposed_action,\n    expires_at,\n    correlation_id,\n    idempotency_key,\n    requested_at: payload.requested_at || new Date().toISOString()\n  }\n}];"
+      },
+      "id": "node-validate-approval",
+      "name": "Validate Approval Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-if-approval-valid",
+      "name": "Check If Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": {\n    \"code\": \"INVALID_EVENT_PAYLOAD\",\n    \"message\": \"{{ $json.error }}\"\n  }\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "node-respond-approval-400",
+      "name": "Respond 400 Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 440]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate Action Links and human notification payload\nconst val = $('Validate Approval Event').first().json;\nconst apiBase = $env.AGENTOPS_API_URL || 'http://127.0.0.1:8000';\n\nconst approveUrl = `${apiBase}/api/v1/approvals/${val.approval_id}/approve`;\nconst rejectUrl = `${apiBase}/api/v1/approvals/${val.approval_id}/reject`;\n\nconst formattedAlert = `⚠️ **Human Approval Required (Checkpoint Gate)**\\n\\n` +\n  `**Run ID:** \\`${val.run_id}\\`\\n` +\n  `**Approval ID:** \\`${val.approval_id}\\`\\n` +\n  `**Action Type:** \\`${val.action}\\`\\n` +\n  `**Payload Hash:** \\`${val.payload_hash || 'none'}\\`\\n` +\n  `**Expires At:** ${val.expires_at || 'No expiration set'}\\n\\n` +\n  `**Proposed Action:**\\n\\`\\`\\`json\\n${JSON.stringify(val.proposed_action, null, 2)}\\n\\`\\`\\`\\n\\n` +\n  `**To Approve:**\\nPOST ${approveUrl}\\n\\n` +\n  `**To Reject:**\\nPOST ${rejectUrl}\\n\\n` +\n  `*Dispatched via AgentOps n8n Approval Gate Pipeline*`;\n\nreturn [{\n  json: {\n    notification_type: 'APPROVAL_REQUESTED',\n    approval_id: val.approval_id,\n    run_id: val.run_id,\n    step_id: val.step_id,\n    action: val.action,\n    payload_hash: val.payload_hash,\n    expires_at: val.expires_at,\n    approve_url: approveUrl,\n    reject_url: rejectUrl,\n    formatted_alert: formattedAlert,\n    correlation_id: val.correlation_id,\n    idempotency_key: val.idempotency_key,\n    status: 'NOTIFIED'\n  }\n}];"
+      },
+      "id": "node-generate-approval-links",
+      "name": "Generate Approval Action Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {},
+      "id": "node-approval-safe-sink",
+      "name": "Safe Demo Logger (Approval Sink)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Approval request notification delivered successfully\",\n  \"approval_id\": \"{{ $json.approval_id }}\",\n  \"run_id\": \"{{ $json.run_id }}\",\n  \"action\": \"{{ $json.action }}\",\n  \"idempotency_key\": \"{{ $json.idempotency_key }}\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "node-respond-approval-200",
+      "name": "Respond 200 Approval Notified",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 200]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Approval Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Approval Event": {
+      "main": [
+        [
+          {
+            "node": "Check If Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Valid": {
+      "main": [
+        [
+          {
+            "node": "Generate Approval Action Links",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400 Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Approval Action Links": {
+      "main": [
+        [
+          {
+            "node": "Safe Demo Logger (Approval Sink)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safe Demo Logger (Approval Sink)": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Approval Notified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
