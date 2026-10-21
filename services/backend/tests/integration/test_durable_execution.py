@@ -222,11 +222,11 @@ def test_timeout_handling_with_soft_time_limit(db_session, sync_session_ctx, mon
 
     run = _create_test_run(db_session, status=RunStatus.QUEUED)
 
-    # Simulate SoftTimeLimitExceeded inside the step execution loop
+    # Simulate SoftTimeLimitExceeded inside the planning loop
     def _mock_plan(*_args, **_kwargs):
         raise SoftTimeLimitExceeded()
 
-    monkeypatch.setattr("app.workers.tasks.create_default_mock_plan", _mock_plan)
+    monkeypatch.setattr("app.workers.tasks.get_llm_provider", _mock_plan)
 
     result = execute_run(str(run.id))
     assert result["status"] == "FAILED_TIMEOUT"

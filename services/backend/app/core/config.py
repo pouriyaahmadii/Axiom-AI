@@ -68,11 +68,17 @@ class Settings(BaseSettings):
 
     # Optional External Providers
     OPENAI_API_KEY: str | None = Field(default=None, description="Optional OpenAI API key")
+    OPENAI_API_BASE: str = Field(
+        default="https://api.openai.com/v1", description="OpenAI-compatible API base URL"
+    )
     OPENAI_MODEL_NAME: str = Field(default="gpt-4o-mini", description="OpenAI model identifier")
     OLLAMA_BASE_URL: str = Field(
         default="http://127.0.0.1:11434", description="Ollama API base URL"
     )
     OLLAMA_MODEL_NAME: str = Field(default="llama3.2", description="Ollama model identifier")
+    LLM_REQUEST_TIMEOUT_SECONDS: float = Field(
+        default=30.0, ge=1.0, le=300.0, description="Default request timeout for LLM calls"
+    )
     TAVILY_API_KEY: str | None = Field(default=None, description="Optional Tavily API key")
 
     # Safety Bounds & Execution Limits

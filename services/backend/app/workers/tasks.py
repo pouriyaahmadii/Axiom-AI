@@ -19,9 +19,11 @@ from app.core.security import generate_secure_token
 from app.db.session import get_sync_session
 from app.models.approval import Approval
 from app.models.audit import AuditEvent
-from app.models.enums import ApprovalStatus, AuditEventType, RunStatus, StepStatus
+from app.models.enums import ApprovalStatus, AuditEventType, LLMCallStatus, RunStatus, StepStatus
+from app.models.llm import LLMCall
 from app.models.run import Run
 from app.models.step import RunStep
+from app.providers import get_llm_provider, sanitize_prompt_preview
 from app.workers.celery_app import celery_app, is_worker_shutting_down
 
 logger = structlog.get_logger(__name__)
@@ -161,8 +163,31 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
             )
 
             if not existing_steps:
-                plan_steps_data = create_default_mock_plan(run)
+                provider = get_llm_provider(run.llm_provider)
+                plan_res = provider.generate_plan(
+                    objective=run.objective,
+                    domain=run.domain,
+                    geography=run.geography,
+                )
+                plan_steps_data = [s.model_dump() for s in plan_res.data.steps]
                 run.raw_plan = {"total_steps": len(plan_steps_data), "steps": plan_steps_data}
+                run.estimated_cost_usd += plan_res.usage.cost_usd
+
+                # Persist auditable LLMCall record
+                llm_call = LLMCall(
+                    run_id=run.id,
+                    provider=plan_res.provider,
+                    model_name=plan_res.model,
+                    prompt_tokens=plan_res.usage.prompt_tokens,
+                    completion_tokens=plan_res.usage.completion_tokens,
+                    total_tokens=plan_res.usage.total_tokens,
+                    cost_usd=plan_res.usage.cost_usd,
+                    duration_ms=plan_res.usage.latency_ms,
+                    status=LLMCallStatus.SUCCESS,
+                    prompt_preview=sanitize_prompt_preview(run.objective),
+                    completion_preview=sanitize_prompt_preview(plan_res.raw_content or ""),
+                )
+                session.add(llm_call)
 
                 for step_def in plan_steps_data:
                     step_entity = RunStep(
@@ -184,7 +209,7 @@ def execute_run(self: Any, run_id: str, correlation_id: str | None = None) -> di
                         correlation_id=correlation_id,
                         event_type=AuditEventType.PLAN_SYNTHESIZED.value,
                         actor="celery_worker",
-                        payload={"total_steps": len(plan_steps_data)},
+                        payload={"total_steps": len(plan_steps_data), "provider": run.llm_provider},
                     )
                 )
 
