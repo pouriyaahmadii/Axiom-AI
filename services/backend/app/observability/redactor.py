@@ -127,4 +127,5 @@ def redact_log_event(
     event_dict: dict[str, Any],
 ) -> dict[str, Any]:
     """Structlog processor ensuring no secrets or unbounded values escape into logs."""
-    return redact_data(event_dict)
+    result = redact_data(event_dict)
+    return result if isinstance(result, dict) else event_dict

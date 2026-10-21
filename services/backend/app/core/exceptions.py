@@ -90,3 +90,16 @@ class SecurityValidationError(AgentOpsError):
         details: list[dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(message, code="SECURITY_VALIDATION_ERROR", details=details)
+
+
+class StepTimeoutError(AgentOpsError):
+    """Raised when an individual step execution exceeds its allotted time limit."""
+
+    def __init__(
+        self,
+        message: str = "Step execution timed out.",
+        step_id: str | None = None,
+        details: list[dict[str, Any]] | None = None,
+    ) -> None:
+        super().__init__(message, code="STEP_TIMEOUT", details=details)
+        self.step_id = step_id

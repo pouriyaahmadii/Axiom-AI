@@ -1,0 +1,26 @@
+{
+  "version": "1.0.0",
+  "baseline_id": "baseline-linear-vs-jira-gold",
+  "description": "Gold standard reference plan, citations, and report output for Linear vs Jira evaluation benchmark.",
+  "expected_plan": {
+    "step_count": 3,
+    "tools": ["search_public_web", "fetch_approved_public_page", "extract_structured_facts"]
+  },
+  "expected_citations": [
+    {
+      "source_id": "src-linear-pricing",
+      "claim": "Linear Standard tier costs $8/user/month billed annually"
+    },
+    {
+      "source_id": "src-jira-pricing",
+      "claim": "Jira Standard tier costs $8.15/user/month"
+    }
+  ],
+  "expected_report_sections": [
+    "Executive Summary",
+    "Empirical Findings",
+    "Strategic Inference & Trade-offs",
+    "Evidence Provenance"
+  ],
+  "citation_coverage_target": 1.0
+}

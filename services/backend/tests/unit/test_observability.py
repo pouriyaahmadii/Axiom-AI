@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -464,7 +465,7 @@ def test_operator_can_identify_failed_step_without_secrets() -> None:
     correlation_id = f"corr-{uuid.uuid4()}"
 
     # 1. Simulate persisted step record in terminal failure state
-    step_record = {
+    step_record: dict[str, Any] = {
         "step_id": failed_step_id,
         "run_id": failed_run_id,
         "step_index": 2,
@@ -480,7 +481,7 @@ def test_operator_can_identify_failed_step_without_secrets() -> None:
     }
 
     # 2. Simulate audit event emitted on failure
-    audit_event = {
+    audit_event: dict[str, Any] = {
         "run_id": failed_run_id,
         "step_id": failed_step_id,
         "correlation_id": correlation_id,
@@ -496,7 +497,7 @@ def test_operator_can_identify_failed_step_without_secrets() -> None:
     }
 
     # 3. Simulate structured log emitted for this failed step
-    raw_log = {
+    raw_log: dict[str, Any] = {
         "timestamp": "2026-10-21T18:00:00Z",
         "level": "ERROR",
         "message": "Step execution failed due to policy violation",
