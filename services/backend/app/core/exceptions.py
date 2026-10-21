@@ -79,3 +79,14 @@ class DeterministicValidationError(AgentOpsError):
         details: list[dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(message, code="DETERMINISTIC_VALIDATION_ERROR", details=details)
+
+
+class SecurityValidationError(AgentOpsError):
+    """Raised when an operation violates security policy or safety checks."""
+
+    def __init__(
+        self,
+        message: str = "Security validation policy violated.",
+        details: list[dict[str, Any]] | None = None,
+    ) -> None:
+        super().__init__(message, code="SECURITY_VALIDATION_ERROR", details=details)

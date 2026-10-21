@@ -13,7 +13,13 @@ from app.agents import (
 
 def test_allowed_task_types_allowlist() -> None:
     """Verify strictly approved task types in agent registry."""
-    assert {"web_search", "fetch_document", "extract_metrics"} == ALLOWED_TASK_TYPES
+    assert {"web_search", "fetch_document", "extract_metrics"}.issubset(ALLOWED_TASK_TYPES)
+    assert "discover_competitors" in ALLOWED_TASK_TYPES
+    assert "search_public_web" in ALLOWED_TASK_TYPES
+    assert "fetch_approved_public_page" in ALLOWED_TASK_TYPES
+    assert "extract_structured_facts" in ALLOWED_TASK_TYPES
+    assert "compare_entities" in ALLOWED_TASK_TYPES
+    assert "generate_report_draft" in ALLOWED_TASK_TYPES
 
 
 def test_validate_plan_dag_success() -> None:

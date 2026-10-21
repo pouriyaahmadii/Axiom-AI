@@ -7,6 +7,8 @@ import secrets
 import socket
 from urllib.parse import urlparse
 
+from app.core.exceptions import SecurityValidationError
+
 # Blocked IPv4 networks (private, loopback, link-local, carrier NAT, cloud metadata)
 BLOCKED_IPV4_NETWORKS = [
     ipaddress.ip_network("0.0.0.0/8"),  # Broadcast / "this" network
@@ -38,12 +40,6 @@ BLOCKED_IPV6_NETWORKS = [
     ipaddress.ip_network("fe80::/10"),  # Link-local
     ipaddress.ip_network("ff00::/8"),  # Multicast
 ]
-
-
-class SecurityValidationError(ValueError):
-    """Raised when an operation violates security policy or safety checks."""
-
-    pass
 
 
 def is_ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:

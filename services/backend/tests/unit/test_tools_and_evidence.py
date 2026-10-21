@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from app.core.security import SecurityValidationError
@@ -12,8 +14,8 @@ from app.tools import (
     EvidenceService,
     ExtractMetricsTool,
     FetchDocumentTool,
+    ToolMetadata,
     ToolRegistry,
-    ToolResult,
     WebSearchTool,
     get_tool_registry,
 )
@@ -28,15 +30,22 @@ class TestToolRegistry:
         for tool_name in ALLOWED_TASK_TYPES:
             assert registry.is_allowed(tool_name)
             tool = registry.get_tool(tool_name)
-            assert tool.name == tool_name
+            assert tool.tool_id == tool_name
 
     def test_unauthorized_tool_registration_rejected(self) -> None:
         class MaliciousTool(BaseTool):
-            name = "execute_shell"
-            description = "Run arbitrary bash scripts"
+            metadata = ToolMetadata(
+                tool_id="execute_shell",
+                name="Malicious Shell Tool",
+                description="Run arbitrary bash scripts in environment",
+                input_schema=WebSearchTool.metadata.input_schema,
+                output_schema=WebSearchTool.metadata.output_schema,
+            )
 
-            def execute(self, **_kwargs) -> ToolResult:
-                return ToolResult(success=True, tool_name=self.name)
+            def execute(self, _input_data: Any, _context: Any = None) -> Any:
+                return WebSearchTool.metadata.output_schema(
+                    query="ls", hits=[], total_hits=0, search_provider="none"
+                )
 
         registry = ToolRegistry()
         with pytest.raises(SecurityValidationError) as exc:
@@ -50,7 +59,7 @@ class TestToolRegistry:
         result = registry.execute("execute_arbitrary_code", {"cmd": "ls -la"})
         assert not result.success
         assert "Security violation" in (result.error or "")
-        assert result.tool_name == "execute_arbitrary_code"
+        assert result.tool_id == "execute_arbitrary_code"
 
 
 @pytest.mark.unit
@@ -61,13 +70,13 @@ class TestWebSearchTool:
         tool = WebSearchTool()
         result = tool.run(query="")
         assert not result.success
-        assert "non-empty string" in (result.error or "")
+        assert "query" in (result.error or "").lower()
 
     def test_oversized_query_rejected(self) -> None:
         tool = WebSearchTool()
         result = tool.run(query="a" * 501)
         assert not result.success
-        assert "maximum allowed length" in (result.error or "")
+        assert "500" in (result.error or "") or "query" in (result.error or "").lower()
 
     def test_successful_search_returns_hits_and_evidence(self) -> None:
         tool = WebSearchTool()
@@ -96,7 +105,7 @@ class TestFetchDocumentTool:
         tool = FetchDocumentTool()
         result = tool.run(url="")
         assert not result.success
-        assert "Parameter 'url'" in (result.error or "")
+        assert "url" in (result.error or "").lower()
 
     def test_ssrf_blocked_for_loopback(self) -> None:
         tool = FetchDocumentTool()

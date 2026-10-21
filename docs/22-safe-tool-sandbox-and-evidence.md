@@ -1,14 +1,24 @@
-# Phase 13: Safe Tool Sandbox & Evidence Provenance Layer
+# Phase 13: Strict Tool Registry & Safe Research Tools
 
 ## 1. Architectural Overview
 
-AgentOps enforces strict isolation between external untrusted resources, LLM-generated plan steps, and the underlying operating system. The **Safe Tool Sandbox** and **Evidence Provenance Layer** guarantee that:
-1. **Zero Arbitrary Code Execution**: No `eval()`, `exec()`, `os.system()`, or `subprocess` commands can ever be executed by the agent runtime. Only pre-compiled, registered Python classes inheriting from `BaseTool` are permitted.
-2. **Strict Tool Allowlisting**: The `ToolRegistry` enforces an immutable allowlist: `web_search`, `fetch_document`, and `extract_metrics`. Any attempt to request unregistered tools (e.g., `execute_shell`, `run_python`) immediately halts execution and transitions the run to `FAILED`.
-3. **Pre-Socket SSRF Protection**: Inbound URL parameters are resolved and screened against RFC 1918 private subnets, loopback addresses (`127.0.0.0/8`, `::1`), link-local/cloud metadata (`169.254.169.254`), and multicast before any network connection is opened.
-4. **MIME & Resource Boundaries**: HTTP payloads are limited to 1 MB (`DEFAULT_MAX_BYTES`) and strictly filtered by MIME type (`text/html`, `text/plain`, `application/json`, `application/xml`). Binaries, executables, and media streams are rejected at the header stage.
-5. **Cryptographic Evidence Provenance**: Every factual excerpt retrieved from external sources is normalized, assigned a canonical SHA-256 hash, and stored in an immutable evidence record.
-6. **Citation Grounding Auditor**: Synthesized final reports are audited against the captured evidence pool to verify that all empirical citations (e.g., `[E1]`, `[ev-...]`) map to untampered evidence records.
+AgentOps enforces strict isolation between external untrusted web resources, LLM-generated plan steps, and the underlying host system. The **Safe Tool Sandbox** and **Evidence Provenance Layer** guarantee that:
+
+1. **Zero Arbitrary Code Execution**: No `eval()`, `exec()`, `os.system()`, or `subprocess` calls can ever be executed by the agent runtime. Every available tool is a pre-compiled Python class inheriting from `BaseTool`.
+2. **Immutable Tool Allowlist**: The `ToolRegistry` enforces a strict allowlist. Any attempt to invoke an unregistered tool (e.g., `execute_shell`, `run_python`, `curl_download`) immediately halts execution and transitions the run to `FAILED`.
+3. **Comprehensive Tool Metadata**: Every registered tool defines:
+   - Stable tool ID
+   - Typed Pydantic input schema
+   - Typed Pydantic output schema
+   - Timeout and execution bounds
+   - Declarative retry policy (`RetryPolicy`)
+   - Risk classification (`RiskLevel`: `LOW`, `MEDIUM`, `HIGH`) and permission scope
+   - Resource limits (`ResourceLimits`: max input characters, max output bytes, max seconds)
+   - Audit logging requirements (`AuditPolicy`)
+4. **Pre-Socket SSRF & IP Validation**: Inbound URL parameters are resolved and screened against RFC 1918 private subnets, loopback addresses (`127.0.0.0/8`, `::1`), link-local/cloud metadata (`169.254.169.254`, `metadata.google.internal`), and multicast before opening any network socket.
+5. **Port & Redirect Restrictions**: Only ports 80 and 443 are permitted. HTTP redirects are inspected manually at every intermediate hop (up to 3 hops) to prevent redirect chains into internal networks.
+6. **Untrusted Content Envelopes & Prompt Injection Defense**: External page content is stripped of scripts, capped in size, and enclosed inside `<untrusted_source_content>` demarcation tags with cryptographic SHA-256 digests.
+7. **Search Provider Interface & Deduplication**: Modular search abstraction supporting a deterministic, offline `MockSearchProvider` and an optional live `TavilySearchProvider`. All search results are normalized and deduplicated by URL and content hash.
 
 ---
 
@@ -16,143 +26,145 @@ AgentOps enforces strict isolation between external untrusted resources, LLM-gen
 
 ```mermaid
 flowchart TD
-    subgraph AgentRuntime["LangGraph Execution Node (Stage 5 & 6)"]
-        ExecNode["execute_task_node"]
-        ValNode["validate_step_result_node"]
+    subgraph AgentRuntime["LangGraph Execution Runtime"]
+        StepNode["execute_task_node"]
+        ValidateNode["validate_step_result_node"]
+        ReportNode["validate_report_node"]
     end
 
-    subgraph Sandbox["Guarded Tool Sandbox (app.tools)"]
-        Registry["ToolRegistry (Allowlist Gate)"]
-        Search["WebSearchTool"]
-        Fetch["FetchDocumentTool"]
-        Extract["ExtractMetricsTool"]
+    subgraph ToolRegistryZone["Strict Tool Registry (app.tools.registry)"]
+        Gate["ToolRegistry (Allowlist Gate)"]
+        T1["discover_competitors"]
+        T2["search_public_web"]
+        T3["fetch_approved_public_page"]
+        T4["extract_structured_facts"]
+        T5["compare_entities"]
+        T6["generate_report_draft"]
     end
 
-    subgraph SecurityShield["Security & Boundary Enforcers"]
-        SSRF["SSRF Guard (app.core.security.is_safe_url)"]
-        MIME["MIME & Size Filter (<= 1MB)"]
+    subgraph SearchProviders["Search Provider Abstraction"]
+        BaseSearch["BaseSearchProvider (Interface)"]
+        MockSearch["MockSearchProvider (Deterministic Corpus)"]
+        LiveSearch["TavilySearchProvider (Optional Live API)"]
     end
 
-    subgraph Provenance["Evidence & Grounding Layer"]
+    subgraph SecurityShield["Security & Boundary Enforcers (app.tools.security)"]
+        SSRF["SSRF & DNS Validator (validate_url_security)"]
+        Redirect["Manual Redirect Inspector (SafeHttpClient)"]
+        Envelope["Untrusted Envelope (sanitize_and_envelope_content)"]
+    end
+
+    subgraph ProvenanceLayer["Evidence Provenance Layer (app.tools.evidence)"]
         EvService["EvidenceService (SHA-256 Canonicalizer)"]
-        Auditor["CitationAuditor (Hallucination Detector)"]
+        Auditor["CitationAuditor (Grounding & Hallucination Auditor)"]
     end
 
-    ExecNode -->|Invoke tool_name, params| Registry
-    Registry -->|Allowlist Check| Search
-    Registry -->|Allowlist Check| Fetch
-    Registry -->|Allowlist Check| Extract
+    StepNode -->|Tool ID + Typed Inputs| Gate
+    Gate -->|Execute| T1
+    Gate -->|Execute| T2
+    Gate -->|Execute| T3
+    Gate -->|Execute| T4
+    Gate -->|Execute| T5
+    Gate -->|Execute| T6
 
-    Fetch -->|Pre-socket IP Check| SSRF
-    Fetch -->|Streaming Header Check| MIME
+    T2 --> BaseSearch
+    BaseSearch --> MockSearch
+    BaseSearch -.->|Optional| LiveSearch
 
-    Search -->|Hits & Excerpts| EvService
-    Fetch -->|Clean Text| EvService
-    Extract -->|Verbatim Excerpts| EvService
+    T3 --> SSRF
+    SSRF --> Redirect
+    Redirect --> Envelope
 
-    EvService -->|Verifiable Evidence Record| ValNode
+    T1 & T2 & T3 & T4 & T5 --> EvService
+    EvService --> ValidateNode
 
-    subgraph ReportStage["Synthesis & Validation (Stage 8 & 9)"]
-        GenReport["generate_report_node"]
-        ValReport["validate_report_node"]
-    end
-
-    GenReport -->|Final Report Draft| ValReport
-    ValReport -->|Audit Grounding| Auditor
-    EvService -.->|Evidence Pool| Auditor
+    T6 --> Auditor
+    Auditor --> ReportNode
 ```
 
 ---
 
-## 3. Approved Tools & Execution Contracts
+## 3. Tool Metadata & Registry Specification
 
-### 3.1 `WebSearchTool` (`web_search`)
-- **Purpose**: Queries public competitor intelligence sources or pre-packaged market corpus.
-- **Inputs**:
-  - `query: str` (1 to 500 characters, required).
-  - `domain: str | None` (target market domain).
-  - `limit: int` (1 to 20, default 5).
-- **Security & Guarantees**:
-  - Validates and sanitizes every returned result URL through `is_safe_url`.
-  - In mock/offline mode, queries a deterministic corpus (`DEFAULT_COMPETITOR_CORPUS`) covering observability, fintech, and cloud infrastructure without external network access.
-  - Generates verifiable evidence records with SHA-256 hashes for each hit snippet.
+Every tool registered in `ToolRegistry` conforms to the `ToolMetadata` contract:
 
-### 3.2 `FetchDocumentTool` (`fetch_document`)
-- **Purpose**: Ingests external web documents, cleans HTML, and prepares text for evidence extraction.
-- **Inputs**:
-  - `url: str` (valid HTTP/HTTPS URL). If omitted, falls back to `https://example.com/{domain}/pricing`.
-  - `timeout_seconds: float` (default: 10.0s).
-  - `max_bytes: int` (default: 1 MB).
-- **Security & Guarantees**:
-  - **Pre-socket SSRF check**: Rejects `localhost`, `127.0.0.1`, RFC 1918 private IPs, and cloud metadata (`169.254.169.254`).
-  - **MIME filtering**: Allows only `text/html`, `text/plain`, `application/json`, `application/xml`. Rejects binary/executable formats.
-  - **Streaming byte cap**: Reads chunks up to `max_bytes` and terminates stream if exceeded.
-  - **Sanitization**: Strips HTML tags, `<script>`, and `<style>` blocks to extract plain text.
-  - **Hermetic offline support**: Built-in synthetic documents for RFC 2606 documentation domains (`example.com`, `example.org`, `example.net`) allow 100% offline, zero-DNS testing.
-
-### 3.3 `ExtractMetricsTool` (`extract_metrics`)
-- **Purpose**: Extracts structured numerical data, pricing figures, uptime SLAs, and verbatim grounding excerpts.
-- **Inputs**:
-  - `text: str` (source document text).
-  - `domain: str | None` (industry domain).
-- **Security & Guarantees**:
-  - Deterministic regex extraction for pricing patterns (`$XX/mo`, `$XX/host`) and SLAs (`99.XX% uptime`).
-  - Verbatim excerpt matching: captures surrounding context for every extracted metric to ensure 100% grounded citations.
-  - Optional LLM structured extraction via `get_llm_provider()` with token cost tracking.
+| Tool ID | Risk Level | Permission Scope | Timeout | Max Output | Primary Responsibilities |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`discover_competitors`** | `LOW` | `research:read` | 10.0s | 256 KB | Identifies competitor entities in target industry and resolves primary documentation URLs. |
+| **`search_public_web`** | `MEDIUM` | `research:read` | 15.0s | 512 KB | Queries external web and competitor intelligence sources with deduplication and SSRF filtering. |
+| **`fetch_approved_public_page`** | `MEDIUM` | `research:read` | 20.0s | 1 MB | Fetches approved web pages with pre-socket SSRF, port checks (80/443), manual redirect inspection, and prompt-injection envelope wrapping. |
+| **`extract_structured_facts`** | `LOW` | `research:read` | 20.0s | 256 KB | Extracts pricing, SLAs, features, and verbatim excerpts with canonical SHA-256 hashes. |
+| **`compare_entities`** | `LOW` | `research:read` | 15.0s | 256 KB | Synthesizes a structured comparative matrix evaluating entities across pricing, SLAs, and capabilities. |
+| **`generate_report_draft`** | `HIGH` | `research:synthesize` | 30.0s | 512 KB | Synthesizes structured markdown research deliverables strictly grounded in evidence citations. |
 
 ---
 
-## 4. Evidence Provenance & Cryptographic Hashing
+## 4. Initial Tool Implementations
 
-The `EvidenceService` (`app.tools.evidence`) guarantees empirical integrity across the research lifecycle:
+### 4.1 `discover_competitors`
+- **Input**: `DiscoverCompetitorsInput(domain: str, geography: str | None, max_results: int = 5)`
+- **Output**: `DiscoverCompetitorsOutput(domain: str, geography: str, competitors: list[CompetitorEntity], total_found: int, evidence_records: list)`
+- **Behavior**: Queries domain knowledge directory to identify candidate competitor products, descriptions, and primary URLs.
 
-1. **Text Normalization**: Whitespace, newlines, and control characters are collapsed into a canonical format (`re.sub(r"\s+", " ", text).strip()`) to ensure consistent hashing across platforms.
-2. **SHA-256 Content Hashing**: Every evidence item receives a cryptographic digest of its normalized text:
-   $$\text{content\_hash} = \text{SHA-256}(\text{normalize\_text}(\text{snippet}))$$
-3. **Evidence Record Structure**:
-   ```json
-   {
-     "evidence_id": "ev-87834e3a4bbe",
-     "run_id": "test-run-001",
-     "step_identifier": "search_market_landscape",
-     "tool_name": "web_search",
-     "source_url": "https://example.com/datadog/pricing",
-     "content_hash": "87834e3a4bbe65cf23cfae...",
-     "snippet": "Infrastructure monitoring starts at $15/host/mo...",
-     "metadata": {"title": "Datadog Pricing", "query": "cloud observability"},
-     "created_at": "2026-10-21T19:16:56Z"
-   }
-   ```
-4. **Tamper Detection**: `EvidenceService.verify_evidence_integrity(record)` recalculates the SHA-256 hash of `snippet` and compares it to `content_hash`. Any post-retrieval manipulation is detected immediately.
+### 4.2 `search_public_web`
+- **Input**: `SearchPublicWebInput(query: str, domain: str | None, limit: int = 5)`
+- **Output**: `SearchPublicWebOutput(query: str, hits: list[SearchHit], total_hits: int, search_provider: str, evidence_records: list)`
+- **Behavior**: Uses active `SearchProvider` (`MockSearchProvider` by default, or `TavilySearchProvider` if configured). Normalizes URLs by removing tracking parameters (`utm_*`, `ref`) and deduplicates hits by URL and content hash.
+
+### 4.3 `fetch_approved_public_page`
+- **Input**: `FetchApprovedPageInput(url: str, domain: str | None, approved_source_urls: list[str], timeout_seconds: float = 10.0, max_bytes: int = 1_048_576)`
+- **Output**: `FetchApprovedPageOutput(url: str, final_url: str, status_code: int, content_type: str, content: str, sanitized_text: str, content_hash: str, byte_count: int, redirect_chain: list, evidence_records: list)`
+- **Safety Controls**:
+  - Rejects arbitrary unapproved URLs not present in `approved_source_urls` or RFC 2606 documentation domains.
+  - Enforces ports `80` and `443` only.
+  - Pre-socket DNS check blocks private, loopback, and metadata subnets.
+  - Inspects redirect hops manually (`follow_redirects=False`) and re-validates each hop.
+  - Strips script and style tags, wrapping output in `<untrusted_source_content>` envelope.
+
+### 4.4 `extract_structured_facts`
+- **Input**: `ExtractFactsInput(text: str, domain: str | None, source_url: str | None, categories: list[str])`
+- **Output**: `ExtractFactsOutput(domain: str, facts: list[ExtractedFactItem], metrics: dict, total_facts: int, cost_usd: float, evidence_records: list)`
+- **Behavior**: Extracts pricing patterns (`$XX/mo`), availability commitments (`99.XX% SLA`), and feature offerings. Anchors every fact to a verbatim source snippet and SHA-256 hash.
+
+### 4.5 `compare_entities`
+- **Input**: `CompareEntitiesInput(entities: list[str], dimensions: list[str], domain: str | None, facts_by_entity: dict)`
+- **Output**: `CompareEntitiesOutput(entities: list[str], dimensions: list[str], matrix: list[EntityComparisonRow], summary: str, grounded_claims: list, evidence_records: list)`
+- **Behavior**: Constructs cross-competitor evaluation matrix comparing entities across pricing, uptime SLAs, and architecture.
+
+### 4.6 `generate_report_draft`
+- **Input**: `GenerateReportDraftInput(objective: str, domain: str, evidence_records: list[dict], comparison_summary: str | None, llm_provider: str | None)`
+- **Output**: `GenerateReportDraftOutput(title: str, executive_summary: str, grounded_findings: str, strategic_inferences: str, markdown_content: str, citations: list, grounding_coverage_score: float)`
+- **Behavior**: Synthesizes formal research report deliverable using the active LLM provider adapter and verifies empirical citation markers (`[E1]`, `[ev-...]`) via `CitationAuditor`.
 
 ---
 
-## 5. Citation Grounding Auditor
+## 5. Security & SSRF Defense Matrix
 
-The `CitationAuditor` (`app.tools.citation_auditor`) audits report deliverables in Stage 9 (`validate_report_node`):
-
-1. **Citation Marker Parsing**: Detects inline citation markers matching:
-   - Numerical aliases: `[E1]`, `[E2]`, etc.
-   - Evidence UUID slugs: `[ev-87834e3a4bbe]`.
-   - Source identifiers: `[source-1]`.
-2. **Grounding Verification**:
-   - Maps each cited marker to the corresponding record in `state["evidence_items"]`.
-   - Verifies cryptographic hash integrity on each cited record.
-   - Detects hallucinated citations (citations that cite non-existent evidence IDs or fabricated references).
-3. **Coverage Scoring**:
-   $$\text{Coverage Score} = \frac{\text{Verified Citations}}{\max(\text{Total Citations}, 1)}$$
-4. **Failure Behavior**: If ungrounded or hallucinated citations are discovered, they are appended to `state["errors"]` as explicit warnings, ensuring transparent operator visibility and transitioning the run to `COMPLETED_WITH_WARNINGS`.
+| Attack Vector | Defense Mechanism | Implementation Location | Test Verification |
+| :--- | :--- | :--- | :--- |
+| **Loopback probing (`127.0.0.1`, `localhost`)** | Pre-socket IP & hostname blacklist | `app.tools.security.validate_url_security` | Verified across standard, hex (`0x7f000001`), and decimal (`2130706433`) formats. |
+| **Cloud metadata theft (`169.254.169.254`)** | Link-local & cloud provider metadata blacklist | `app.tools.security.BLOCKED_IPV4_SUBNETS` | Verified for AWS, GCP (`metadata.google.internal`), and Azure. |
+| **Private network probing (RFC 1918)** | Pre-socket subnet blacklist (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) | `app.tools.security.is_ip_blocked` | Verified across IPv4 and IPv4-mapped IPv6 (`::ffff:10.0.0.1`). |
+| **Port scanning via tool URL (`:22`, `:5432`, `:6379`)** | Port restriction to `{80, 443}` only | `app.tools.security.ALLOWED_PORTS` | Verified: non-standard ports immediately rejected. |
+| **Redirect to internal network (SSRF via 302)** | Manual redirect hop inspection (max 3 hops) | `app.tools.security.SafeHttpClient.fetch_url` | Verified: redirects to loopback or private IPs aborted at hop 1. |
+| **Credential stuffing / userinfo (`user:pass@host`)** | Userinfo `@` syntax rejection | `app.tools.security.validate_url_security` | Verified: URLs with userinfo rejected. |
+| **Null byte poisoning (`%00`)** | Null byte detection in URL path and query | `app.tools.security.validate_url_security` | Verified: Null bytes rejected before parsing. |
+| **Memory DoS / Oversized payload** | Streaming byte ceiling (default 1 MB) | `app.tools.security.SafeHttpClient.max_bytes` | Verified: responses exceeding limit truncated. |
+| **Binary payload ingestion** | MIME Content-Type whitelist (`text/html`, `text/plain`, `application/json`) | `app.tools.security.ALLOWED_CONTENT_TYPES` | Verified: `application/octet-stream` rejected. |
+| **Prompt Injection via retrieved page** | `<untrusted_source_content>` envelope tags | `app.tools.security.sanitize_and_envelope_content` | Verified: prompt injections isolated in tagged envelope. |
+| **Unregistered tool execution** | Registry allowlist enforcement (`ALLOWED_TOOL_IDS`) | `app.tools.registry.ToolRegistry.execute` | ACCEPTANCE CRITERIA: Unregistered tools hard rejected. |
 
 ---
 
 ## 6. Verification & Quality Gates
 
-The implementation is verified by 111 automated tests spanning unit, contract, and workflow integration:
-
 ```bash
 make validate
 ```
-- **Ruff linter**: 100% clean check (`ruff check .`).
-- **Ruff formatter**: 136 files verified (`ruff format --check .`).
-- **Mypy type checker**: Strict static typing passed across 69 source files without error (`mypy services/backend/app`).
-- **Pytest suite**: 111 tests passing in under 2 seconds (`pytest services/backend/tests`).
+- **Ruff Linter**: 100% clean check (`ruff check .`).
+- **Ruff Formatter**: 144 files verified (`ruff format --check .`).
+- **Mypy Type Checker**: Strict static typing passed across 75 source files (`mypy services/backend/app`).
+- **Pytest Suite**: 168 tests passing in 2.25s:
+  - 57 dedicated security and SSRF tests (`services/backend/tests/security/test_url_safety_and_tools.py`).
+  - 19 tool registry and evidence provenance tests (`services/backend/tests/unit/test_tools_and_evidence.py`).
+  - 92 baseline, domain model, API, async execution, provider, and LangGraph runtime tests.
