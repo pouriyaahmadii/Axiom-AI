@@ -74,6 +74,7 @@ class MockLLMProvider(BaseLLMProvider):
                 parameters={
                     "query": f"{domain} competitors market comparison {geography or ''}".strip()
                 },
+                dependencies=[],
                 requires_human_approval=False,
             ),
             PlanStepDefinition(
@@ -82,6 +83,7 @@ class MockLLMProvider(BaseLLMProvider):
                 title="Fetch documentation and pricing sheets for leading players",
                 tool_name="fetch_document",
                 parameters={"domain": domain, "depth": 2},
+                dependencies=["search_market_landscape"],
                 requires_human_approval=False,
             ),
             PlanStepDefinition(
@@ -90,6 +92,7 @@ class MockLLMProvider(BaseLLMProvider):
                 title="Extract structured feature matrix and commercial metrics",
                 tool_name="extract_metrics",
                 parameters={"domain": domain},
+                dependencies=["fetch_competitor_documentation"],
                 requires_human_approval=False,
             ),
         ]

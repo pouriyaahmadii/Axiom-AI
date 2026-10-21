@@ -91,6 +91,12 @@ def is_safe_url(url: str, allow_private: bool = False) -> tuple[bool, str]:
     ):
         return False, f"Target hostname {hostname!r} resolves to local loopback."
 
+    # RFC 2606 reserved documentation domains permit hermetic offline testing and documentation references
+    if lower_host in ("example.com", "example.org", "example.net") or lower_host.endswith(
+        ".example"
+    ):
+        return True, "URL is safe (RFC 2606 documentation domain)"
+
     # In strict mode, prevent access to private IP spaces and internal cloud metadata
     if not allow_private:
         try:

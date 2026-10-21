@@ -57,6 +57,9 @@ class PlanStepDefinition(BaseModel):
     parameters: dict[str, Any] = Field(
         default_factory=dict, description="Typed parameters for the tool"
     )
+    dependencies: list[str] = Field(
+        default_factory=list, description="Step identifiers this step depends on"
+    )
     requires_human_approval: bool = Field(
         default=False, description="Whether this step requires human oversight"
     )
