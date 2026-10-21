@@ -57,7 +57,7 @@ class CitationAuditor:
     def audit_report_grounding(
         cls,
         report_data: dict[str, Any],
-        evidence_items: list[dict[str, Any]],
+        evidence_items: list[Any],
     ) -> CitationAuditResult:
         """Audit report claims and citations against the recorded evidence pool."""
         markdown = report_data.get("markdown_content", "")
@@ -67,23 +67,29 @@ class CitationAuditor:
         found_markers = cls.extract_citations_from_markdown(markdown)
 
         # Index available evidence by various keys: evidence_id, short hash, source URL, marker alias
-        evidence_by_id: dict[str, dict[str, Any]] = {}
-        evidence_by_hash: dict[str, dict[str, Any]] = {}
-        evidence_by_url: dict[str, dict[str, Any]] = {}
-        evidence_by_alias: dict[str, dict[str, Any]] = {}
+        evidence_by_id: dict[str, Any] = {}
+        evidence_by_hash: dict[str, Any] = {}
+        evidence_by_url: dict[str, Any] = {}
+        evidence_by_alias: dict[str, Any] = {}
 
         for idx, ev in enumerate(evidence_items, start=1):
-            ev_id = ev.get("evidence_id") or f"ev-{ev.get('content_hash', '')[:12]}"
-            content_hash = ev.get("content_hash", "")
-            source_url = ev.get("source_url", "")
+            if isinstance(ev, dict):
+                ev_id = ev.get("evidence_id") or f"ev-{ev.get('content_hash', '')[:12]}"
+                content_hash = ev.get("content_hash", "")
+                source_url = ev.get("source_url", "")
+            else:
+                ev_id = getattr(ev, "evidence_id", f"ev-{getattr(ev, 'content_hash', '')[:12]}")
+                content_hash = getattr(ev, "content_hash", "")
+                source_url = getattr(ev, "source_url", "")
+
             alias = f"E{idx}"
 
-            evidence_by_id[ev_id.lower()] = ev
+            evidence_by_id[str(ev_id).lower()] = ev
             if content_hash:
-                evidence_by_hash[content_hash.lower()] = ev
-                evidence_by_hash[content_hash[:12].lower()] = ev
+                evidence_by_hash[str(content_hash).lower()] = ev
+                evidence_by_hash[str(content_hash)[:12].lower()] = ev
             if source_url:
-                evidence_by_url[source_url.lower()] = ev
+                evidence_by_url[str(source_url).lower()] = ev
             evidence_by_alias[alias.lower()] = ev
 
         verified_ids: set[str] = set()
@@ -93,7 +99,7 @@ class CitationAuditor:
         # Audit markers found in text
         for marker in found_markers:
             marker_key = marker.lower()
-            matched_ev: dict[str, Any] | None = (
+            matched_ev: Any | None = (
                 evidence_by_alias.get(marker_key)
                 or evidence_by_id.get(marker_key)
                 or evidence_by_hash.get(marker_key)
@@ -101,9 +107,24 @@ class CitationAuditor:
 
             if matched_ev:
                 # Verify cryptographic integrity of the matched evidence
-                if EvidenceService.verify_evidence_integrity(matched_ev):
-                    ev_id = matched_ev.get("evidence_id", marker)
-                    verified_ids.add(ev_id)
+                snippet = (
+                    matched_ev.get("snippet") or matched_ev.get("extracted_passage", "")
+                    if isinstance(matched_ev, dict)
+                    else getattr(matched_ev, "extracted_passage", "")
+                )
+                rec_hash = (
+                    matched_ev.get("content_hash", "")
+                    if isinstance(matched_ev, dict)
+                    else getattr(matched_ev, "content_hash", "")
+                )
+                computed = EvidenceService.compute_content_hash(str(snippet))
+                if computed == rec_hash:
+                    ev_id = (
+                        matched_ev.get("evidence_id", marker)
+                        if isinstance(matched_ev, dict)
+                        else getattr(matched_ev, "evidence_id", marker)
+                    )
+                    verified_ids.add(str(ev_id))
                 else:
                     hallucinated.append(f"{marker} (tampered content hash)")
                     audit_notes.append(
@@ -129,7 +150,12 @@ class CitationAuditor:
             )
 
             if matched_ev:
-                verified_ids.add(matched_ev.get("evidence_id", ev_id))
+                matched_id = (
+                    matched_ev.get("evidence_id", ev_id)
+                    if isinstance(matched_ev, dict)
+                    else getattr(matched_ev, "evidence_id", ev_id)
+                )
+                verified_ids.add(str(matched_id))
             else:
                 if ev_id not in hallucinated:
                     hallucinated.append(ev_id)

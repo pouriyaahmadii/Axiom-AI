@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
-import hashlib
-import re
 from datetime import datetime, timezone
 from typing import Any
+
+from app.evidence.models import (
+    ClaimType,
+    EvidenceRecord,
+    ExtractionStatus,
+    ReportClaim,
+    RetrievalStatus,
+    SourceRecord,
+    SourceType,
+    ValidationStatus,
+)
+from app.evidence.pipeline import EvidencePipeline
 
 
 class EvidenceService:
@@ -14,16 +24,12 @@ class EvidenceService:
     @staticmethod
     def normalize_text(text: str) -> str:
         """Normalize whitespace and control characters to produce canonical text for hashing."""
-        if not text:
-            return ""
-        # Collapse multiple spaces, tabs, and newlines into a single standard space
-        return re.sub(r"\s+", " ", text).strip()
+        return EvidencePipeline.normalize_text(text)
 
     @classmethod
     def compute_content_hash(cls, text: str) -> str:
         """Compute a deterministic SHA-256 hash of normalized text snippet."""
-        canonical = cls.normalize_text(text)
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return EvidencePipeline.compute_sha256(text)
 
     @classmethod
     def create_evidence_record(
@@ -62,3 +68,17 @@ class EvidenceService:
 
         expected_hash = cls.compute_content_hash(str(snippet))
         return bool(expected_hash == str(recorded_hash))
+
+
+__all__ = [
+    "ClaimType",
+    "EvidencePipeline",
+    "EvidenceRecord",
+    "EvidenceService",
+    "ExtractionStatus",
+    "ReportClaim",
+    "RetrievalStatus",
+    "SourceRecord",
+    "SourceType",
+    "ValidationStatus",
+]
