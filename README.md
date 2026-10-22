@@ -1,4 +1,4 @@
-# AgentOps
+# Orchestr-AI
 
 > **Self-hosted, observable, and bounded AI Agent Operations Platform for verifiable intelligence research.**
 
