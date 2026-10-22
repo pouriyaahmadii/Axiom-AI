@@ -13,7 +13,7 @@
 
 ## Employer-Facing Project Summary
 
-AgentOps is an engineering portfolio project designed to demonstrate **production-grade AI systems engineering**, **deterministic workflow orchestration**, **robust security boundaries**, and **observable operations**.
+Orchestr AI is an engineering portfolio project designed to demonstrate **production-grade AI systems engineering**, **deterministic workflow orchestration**, **robust security boundaries**, and **observable operations**.
 
 ### Core Engineering Problems Solved
 
